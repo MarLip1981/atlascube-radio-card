@@ -1,4 +1,4 @@
-# AtlasCube Radio Card
+# AtlasCube Radio Card v0.2
 
 A compact, modern Home Assistant Lovelace card for AtlasCube radio entities.
 
@@ -11,6 +11,9 @@ A compact, modern Home Assistant Lovelace card for AtlasCube radio entities.
 - Source selector
 - Volume slider
 - Online/offline state
+- Automatic AtlasCube device/entity discovery in the visual editor
+- Automatic use of the AtlasCube device `configuration_url` for opening its web panel
+- Native MQTT availability is used by default (no manual ping sensor required)
 - Configurable entity IDs
 - Optional source and volume sections
 
@@ -46,11 +49,13 @@ radio:
   play: button.atlascube_9140_play
   stop: button.atlascube_9140_stop
   next: button.atlascube_9140_next
-  availability: binary_sensor.192_168_1_6
+  # availability: opcjonalne — karta korzysta z natywnej dostępności MQTT, jeśli puste
 
 show_source: true
 show_volume: true
 ```
+
+W wersji v0.2 kliknięcie nagłówka karty otwiera panel WWW radia na podstawie `configuration_url` zapisanej w rejestrze urządzenia Home Assistant. Nie trzeba wpisywać adresu IP ani tworzyć własnego `binary_sensor` do pingowania radia.
 
 The `brightness`, LED ring, SD card and URL playback controls are intentionally not exposed by default.
 
@@ -63,3 +68,10 @@ The `brightness`, LED ring, SD card and URL playback controls are intentionally 
 ## Development
 
 This project starts from the tested AtlasCube dashboard design and is being converted into a standalone custom Lovelace card.
+
+### v0.2
+
+- AtlasCube is detected from the Home Assistant device registry (`manufacturer` / device identifiers).
+- Entities are matched within the detected AtlasCube device instead of assuming a fixed device name such as `atlascube_9140`.
+- The radio web address is read from the device registry `configuration_url`.
+- The manual ping entity is no longer required.
