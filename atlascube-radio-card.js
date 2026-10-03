@@ -1,4 +1,4 @@
-/* AtlasCube Radio Card v0.2.1
+/* AtlasCube Radio Card v0.3
  * https://github.com/MarLip1981/atlascube-radio-card
  */
 
@@ -88,19 +88,29 @@ class AtlasCubeRadioCard extends HTMLElement {
   }
 
   _online() {
-    const availability = this._config.radio?.availability;
+    const r = this._config.radio || {};
+    const availability = r.availability;
 
+    // v0.3: MQTT availability is not read directly by the browser.
+    // Home Assistant applies the MQTT availability topic to the native
+    // AtlasCube entities, so their "unavailable" state is the frontend-safe
+    // representation of the MQTT online/offline state.
+    //
+    // Keep an explicitly configured availability entity as an override.
     if (availability) {
       const state = this._value(availability, "unavailable");
       return state !== "unavailable" && state !== "unknown" && state !== "off";
     }
 
-    const r = this._config.radio || {};
     const states = [r.station, r.title, r.playback, r.volume, r.source]
       .map(id => id ? this._state(id)?.state : undefined)
       .filter(state => state !== undefined);
 
-    return states.some(state => state !== "unavailable" && state !== "unknown");
+    if (!states.length) return false;
+
+    return states.some(state =>
+      state !== "unavailable" && state !== "unknown"
+    );
   }
 
   _webUrl() {
@@ -485,7 +495,7 @@ class AtlasCubeRadioCard extends HTMLElement {
       </style>
 
       <ha-card class="card ${playing ? "playing" : ""} ${!online ? "offline" : ""}">
-        <div class="test-badge">v0.2 TEST</div>
+        <div class="test-badge">v0.3 MQTT TEST</div>
 
         <div class="header ${webUrl ? "web" : ""}" id="header" title="${webUrl ? "Otwórz panel AtlasCube" : ""}">
           <ha-icon
@@ -746,43 +756,17 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
       }
     }
 
-    // Availability is deliberately optional. If AtlasCube has a native
-    // binary_sensor registered on the same device, use it automatically.
-    // Otherwise leave the field empty and let the card use the native
-    // entity states as its fallback online/offline signal.
-    if (!r.availability) {
-      const registryByEntity = new Map(
-        (this._entityRegistry || []).map(entity => [entity.entity_id, entity])
-      );
-      const atlasDevice = this._atlasDevice();
-      const atlasDeviceId = atlasDevice?.id;
-
-      const binarySensors = this._states().filter(state =>
-        state.entity_id.startsWith("binary_sensor.")
-      );
-
-      const sameDevice = atlasDeviceId
-        ? binarySensors.filter(state =>
-            registryByEntity.get(state.entity_id)?.device_id === atlasDeviceId
-          )
-        : [];
-
-      const semantic = binarySensors.filter(state =>
-        /atlas|online|availability|dostęp|dostep|status|ping/i.test(
-          state.entity_id + " " + (state.attributes?.friendly_name || "")
-        )
-      );
-
-      const ipNamed = binarySensors.filter(state =>
-        /^binary_sensor\\.\\d{1,3}(?:_\\d{1,3}){3}$/.test(state.entity_id)
-      );
-
-      const candidate = sameDevice[0] || semantic[0] ||
-        (ipNamed.length === 1 ? ipNamed[0] : null);
-
-      if (candidate) {
-        r.availability = candidate.entity_id;
-      }
+    // v0.3: do not create an availability dependency on a ping helper
+    // or a guessed binary_sensor. MQTT availability is already applied by
+    // Home Assistant to the native AtlasCube entities.
+    //
+    // If v0.2.1 previously auto-selected an IP-named ping sensor, remove it
+    // so the card can test the native MQTT-derived availability path.
+    if (
+      r.availability &&
+      /^binary_sensor\\.\\d{1,3}(?:_\\d{1,3}){3}$/.test(r.availability)
+    ) {
+      delete r.availability;
     }
 
     this._config.radio = { ...r };
@@ -939,9 +923,9 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
       </style>
 
       <div class="box">
-        <div class="badge">v0.2 TEST</div>
+        <div class="badge">v0.3 MQTT TEST</div>
         <h2>AtlasCube Radio</h2>
-        <p>Wybierz encje radia. Możesz rozpocząć od automatycznego wykrywania.</p>
+        <p>Karta wykrywa AtlasCube i korzysta z natywnej dostępności MQTT przez stany jego encji.</p>
 
         <button class="auto" id="auto">🔎 Automatycznie wykryj AtlasCube</button>
 
@@ -954,7 +938,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
         ${this._field("play", "Play")}
         ${this._field("stop", "Stop")}
         ${this._field("next", "Następna")}
-        ${this._field("availability", "Dostępność / online — opcjonalna")}
+        ${this._field("availability", "Dostępność — tylko ręczny override")}
 
         <div class="checks">
           <label>
