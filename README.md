@@ -51,11 +51,9 @@ Until the card is accepted into the default HACS repository list:
 6. Install AtlasCube Radio Card.
 7. Reload the Home Assistant frontend if requested.
 
-HACS stores dashboard elements under the Home Assistant `www/community/` directory and handles serving the JavaScript resource. citeturn1search9turn1search17
-
 #### Future stable publication
 
-The goal is to publish the card as a regular HACS Dashboard repository. HACS requires a public GitHub repository, a valid `hacs.json`, a suitable repository structure and other repository metadata. A GitHub Release is required when submitting the repository to the default HACS repository list. citeturn1search1turn1search0turn2search1
+The goal is to publish the card as a regular HACS Dashboard repository. HACS requires a public GitHub repository, a valid `hacs.json`, suitable repository metadata and a passing HACS validation. A GitHub Release is required for submission to the default HACS repository list.
 
 ### Automatic configuration
 
@@ -284,7 +282,7 @@ Brightness, LED ring, SD card and URL playback controls are intentionally not ex
 - [ ] Run and pass HACS validation
 - [ ] Submit repository to the HACS default `plugin` list
 
-HACS documentation states that default repositories must pass HACS validation, have a release and meet repository requirements such as description, issues and topics. Plugins/themes also require images in the README for default-repository validation. citeturn2search1turn2search0
+For publication in the default HACS repository list, the repository must pass HACS validation and have the required repository metadata. Plugin repositories also need images in the README.
 
 ## License
 
