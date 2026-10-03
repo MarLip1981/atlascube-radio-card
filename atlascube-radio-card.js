@@ -9,6 +9,9 @@ class AtlasCubeRadioCard extends HTMLElement {
     this._config = null;
     this._hass = null;
     this._bound = false;
+    this._deviceRegistry = null;
+    this._entityRegistry = null;
+    this._registryLoading = false;
   }
 
   setConfig(config) {
@@ -44,7 +47,32 @@ class AtlasCubeRadioCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+
+    if (!this._registryLoading && (!this._deviceRegistry || !this._entityRegistry)) {
+      this._loadRegistries().then(() => this._render());
+    }
+
     this._render();
+  }
+
+  async _loadRegistries() {
+    if (!this._hass || this._registryLoading) return;
+
+    this._registryLoading = true;
+
+    try {
+      const [devices, entities] = await Promise.all([
+        this._hass.callWS({ type: "config/device_registry/list" }),
+        this._hass.callWS({ type: "config/entity_registry/list" })
+      ]);
+
+      this._deviceRegistry = devices || [];
+      this._entityRegistry = entities || [];
+    } catch (err) {
+      console.warn("AtlasCube Radio Card: nie udało się pobrać rejestru urządzeń.", err);
+    } finally {
+      this._registryLoading = false;
+    }
   }
 
   getCardSize() {
@@ -75,10 +103,6 @@ class AtlasCubeRadioCard extends HTMLElement {
     return states.some(state => state !== "unavailable" && state !== "unknown");
   }
 
-  _deviceIdForEntity(entityId) {
-    return this._hass?.entities?.[entityId]?.device_id || null;
-  }
-
   _webUrl() {
     const r = this._config?.radio || {};
     const entityIds = [
@@ -86,9 +110,14 @@ class AtlasCubeRadioCard extends HTMLElement {
       r.previous, r.play, r.stop, r.next
     ].filter(Boolean);
 
+    const entityRegistry = this._entityRegistry || [];
+    const deviceRegistry = this._deviceRegistry || [];
+
     for (const entityId of entityIds) {
-      const deviceId = this._deviceIdForEntity(entityId);
-      const device = deviceId ? this._hass?.devices?.[deviceId] : null;
+      const entity = entityRegistry.find(item => item.entity_id === entityId);
+      if (!entity?.device_id) continue;
+
+      const device = deviceRegistry.find(item => item.id === entity.device_id);
       if (device?.configuration_url) {
         return device.configuration_url;
       }
