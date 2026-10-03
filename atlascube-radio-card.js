@@ -12,29 +12,34 @@ class AtlasCubeRadioCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config || !config.radio) {
-      throw new Error("AtlasCube Radio Card: missing 'radio' configuration.");
-    }
-
-    const required = [
-      "station", "title", "playback", "volume", "source",
-      "previous", "play", "stop", "next", "availability"
-    ];
-
-    for (const key of required) {
-      if (!config.radio[key]) {
-        throw new Error(`AtlasCube Radio Card: missing radio.${key}`);
-      }
-    }
-
     this._config = {
       show_source: true,
       show_volume: true,
       ...config,
-      radio: { ...config.radio }
+      radio: { ...(config?.radio || {}) }
     };
 
     this._render();
+  }
+
+  static getConfigElement() {
+    return document.createElement("atlascube-radio-card-editor");
+  }
+
+  static getStubConfig() {
+    return {
+      show_source: true,
+      show_volume: true,
+      radio: {}
+    };
+  }
+
+  _isConfigured() {
+    const r = this._config?.radio || {};
+    return [
+      "station", "title", "playback", "volume", "source",
+      "previous", "play", "stop", "next", "availability"
+    ].every(key => !!r[key]);
   }
 
   set hass(hass) {
@@ -55,11 +60,11 @@ class AtlasCubeRadioCard extends HTMLElement {
   }
 
   _online() {
-    return this._value(this._config.radio.availability) === "on";
+    return this._value(this._config.radio?.availability) === "on";
   }
 
   _playing() {
-    return this._value(this._config.radio.playback) === "playing";
+    return this._value(this._config.radio?.playback) === "playing";
   }
 
   async _press(entityId) {
@@ -95,6 +100,34 @@ class AtlasCubeRadioCard extends HTMLElement {
 
   _render() {
     if (!this._config || !this._hass) return;
+
+    if (!this._isConfigured()) {
+      this.shadowRoot.innerHTML = `
+        <style>
+          :host { display:block; width:100%; }
+          .setup {
+            border-radius:26px;
+            padding:24px;
+            background:rgba(255,255,255,.045);
+            border:1px solid rgba(255,193,7,.30);
+            color:var(--primary-text-color);
+            text-align:center;
+          }
+          .setup ha-icon {
+            --mdc-icon-size:38px;
+            color:#ffc107;
+          }
+          .setup-title { font-size:17px; font-weight:600; margin-top:8px; }
+          .setup-text { font-size:13px; opacity:.65; margin-top:6px; }
+        </style>
+        <ha-card class="setup">
+          <ha-icon icon="mdi:radio-tower"></ha-icon>
+          <div class="setup-title">AtlasCube Radio</div>
+          <div class="setup-text">Skonfiguruj kartę w edytorze, aby rozpocząć.</div>
+        </ha-card>
+      `;
+      return;
+    }
 
     const r = this._config.radio;
     const online = this._online();
@@ -149,6 +182,21 @@ class AtlasCubeRadioCard extends HTMLElement {
           border-color: rgba(255,255,255,.05);
           filter: grayscale(.7);
           opacity: .55;
+        }
+
+        .test-badge {
+          display:inline-flex;
+          align-items:center;
+          min-height:22px;
+          margin:0 8px 2px;
+          padding:3px 8px;
+          border-radius:8px;
+          background:rgba(255,193,7,.12);
+          border:1px solid rgba(255,193,7,.25);
+          color:#ffc107;
+          font-size:9px;
+          font-weight:700;
+          letter-spacing:.7px;
         }
 
         .header {
@@ -365,6 +413,8 @@ class AtlasCubeRadioCard extends HTMLElement {
       </style>
 
       <ha-card class="card ${playing ? "playing" : ""} ${!online ? "offline" : ""}">
+        <div class="test-badge">WERSJA TESTOWA</div>
+
         <div class="header">
           <ha-icon
             class="radio-icon ${playing && online ? "rainbow" : online ? "idle" : "offline"}"
@@ -489,6 +539,325 @@ class AtlasCubeRadioCard extends HTMLElement {
   }
 }
 
+
+
+class AtlasCubeRadioCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._hass = null;
+    this._config = { show_source: true, show_volume: true, radio: {} };
+    this._autoDetected = false;
+  }
+
+  setConfig(config) {
+    this._config = {
+      show_source: true,
+      show_volume: true,
+      ...config,
+      radio: { ...(config?.radio || {}) }
+    };
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+
+    if (!this._autoDetected && this._hass) {
+      this._autoDetect();
+      this._autoDetected = true;
+    }
+
+    this._render();
+  }
+
+  _states() {
+    return Object.values(this._hass?.states || {});
+  }
+
+  _find(role) {
+    const states = this._states();
+
+    const rules = {
+      station: [
+        s => /stacja|station/i.test(s.entity_id),
+        s => /stacja|station/i.test(s.attributes?.friendly_name || "")
+      ],
+      title: [
+        s => /tytul|title|utwor|track/i.test(s.entity_id),
+        s => /tytuł|tytul|utwór|utwor|track|title/i.test(s.attributes?.friendly_name || "")
+      ],
+      playback: [
+        s => /playback/i.test(s.entity_id),
+        s => /playback/i.test(s.attributes?.friendly_name || "")
+      ],
+      volume: [
+        s => s.entity_id.startsWith("number.") && /glosnosc|volume/i.test(s.entity_id),
+        s => s.entity_id.startsWith("number.") && /głośność|glosnosc|volume/i.test(s.attributes?.friendly_name || "")
+      ],
+      source: [
+        s => s.entity_id.startsWith("select.") && /source|źródło|zrodlo/i.test(s.entity_id + " " + (s.attributes?.friendly_name || ""))
+      ],
+      previous: [
+        s => s.entity_id.startsWith("button.") && /previous|prev|poprzed/i.test(s.entity_id + " " + (s.attributes?.friendly_name || ""))
+      ],
+      play: [
+        s => s.entity_id.startsWith("button.") && /play|odtworz/i.test(s.entity_id + " " + (s.attributes?.friendly_name || "")) && !/display|replay/i.test(s.entity_id)
+      ],
+      stop: [
+        s => s.entity_id.startsWith("button.") && /stop|zatrzymaj/i.test(s.entity_id + " " + (s.attributes?.friendly_name || ""))
+      ],
+      next: [
+        s => s.entity_id.startsWith("button.") && /next|następ|nastep/i.test(s.entity_id + " " + (s.attributes?.friendly_name || ""))
+      ],
+      availability: [
+        s => s.entity_id.startsWith("binary_sensor.") && /atlascube/i.test(s.entity_id + " " + (s.attributes?.friendly_name || "")),
+        s => s.entity_id.startsWith("binary_sensor.") && /192_168_1_6|192\.168\.1\.6/.test(s.entity_id)
+      ]
+    };
+
+    const atlas = states.filter(s =>
+      /atlascube/i.test(s.entity_id + " " + (s.attributes?.friendly_name || ""))
+    );
+
+    for (const predicate of (rules[role] || [])) {
+      const hit = atlas.find(predicate);
+      if (hit) return hit.entity_id;
+
+      const anyHit = states.find(predicate);
+      if (anyHit) return anyHit.entity_id;
+    }
+
+    return "";
+  }
+
+  _autoDetect() {
+    const r = this._config.radio;
+
+    for (const role of [
+      "station", "title", "playback", "volume", "source",
+      "previous", "play", "stop", "next", "availability"
+    ]) {
+      if (!r[role]) {
+        const found = this._find(role);
+        if (found) r[role] = found;
+      }
+    }
+
+    this._config.radio = { ...r };
+    this._fire();
+  }
+
+  _fire() {
+    this.dispatchEvent(new CustomEvent("config-changed", {
+      detail: { config: this._config },
+      bubbles: true,
+      composed: true
+    }));
+  }
+
+  _set(key, value) {
+    this._config = {
+      ...this._config,
+      radio: {
+        ...this._config.radio,
+        [key]: value
+      }
+    };
+    this._fire();
+  }
+
+  _entityOptions(role) {
+    const domainMap = {
+      station: ["sensor"],
+      title: ["sensor"],
+      playback: ["sensor"],
+      volume: ["number"],
+      source: ["select"],
+      previous: ["button"],
+      play: ["button"],
+      stop: ["button"],
+      next: ["button"],
+      availability: ["binary_sensor"]
+    };
+
+    const domains = domainMap[role] || [];
+    const states = this._states()
+      .filter(s => domains.includes(s.entity_id.split(".")[0]))
+      .sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+
+    return states.map(s => {
+      const name = s.attributes?.friendly_name || s.entity_id;
+      const selected = s.entity_id === this._config.radio[role] ? "selected" : "";
+      return `<option value="${this._escapeAttr(s.entity_id)}" ${selected}>${this._escape(name)} — ${this._escape(s.entity_id)}</option>`;
+    }).join("");
+  }
+
+  _field(role, label) {
+    const value = this._config.radio[role] || "";
+    return `
+      <label>
+        <span>${label}</span>
+        <select data-role="${role}">
+          <option value="">— wybierz encję —</option>
+          ${this._entityOptions(role)}
+        </select>
+      </label>
+    `;
+  }
+
+  _escape(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  _escapeAttr(value) {
+    return this._escape(value);
+  }
+
+  _render() {
+    const r = this._config.radio;
+    const complete = [
+      "station", "title", "playback", "volume", "source",
+      "previous", "play", "stop", "next", "availability"
+    ].every(k => !!r[k]);
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host { display:block; }
+        .box {
+          padding:16px;
+          border-radius:16px;
+          background:var(--card-background-color,#fff);
+          color:var(--primary-text-color);
+        }
+        h2 { margin:0 0 4px; font-size:18px; }
+        p { margin:0 0 16px; opacity:.65; font-size:13px; }
+        .badge {
+          display:inline-block;
+          padding:3px 7px;
+          border-radius:6px;
+          background:rgba(255,193,7,.14);
+          color:#c78a00;
+          font-size:10px;
+          font-weight:700;
+          letter-spacing:.5px;
+          margin-bottom:12px;
+        }
+        .auto {
+          width:100%;
+          min-height:42px;
+          margin-bottom:16px;
+          border:1px solid var(--divider-color);
+          border-radius:10px;
+          background:var(--secondary-background-color);
+          color:var(--primary-text-color);
+          font:inherit;
+          cursor:pointer;
+        }
+        label { display:block; margin:0 0 12px; }
+        label span {
+          display:block;
+          margin:0 0 5px;
+          font-size:12px;
+          opacity:.75;
+        }
+        select {
+          width:100%;
+          min-height:40px;
+          padding:0 8px;
+          border:1px solid var(--divider-color);
+          border-radius:9px;
+          background:var(--secondary-background-color);
+          color:var(--primary-text-color);
+          font:inherit;
+        }
+        .checks {
+          display:grid;
+          grid-template-columns:1fr 1fr;
+          gap:10px;
+          margin-top:4px;
+        }
+        .checks label {
+          display:flex;
+          align-items:center;
+          gap:8px;
+          margin:0;
+          font-size:13px;
+        }
+        .checks span { margin:0; font-size:13px; }
+        .ok {
+          margin-top:12px;
+          font-size:12px;
+          color:var(--success-color,#43a047);
+        }
+      </style>
+
+      <div class="box">
+        <div class="badge">WERSJA TESTOWA</div>
+        <h2>AtlasCube Radio</h2>
+        <p>Wybierz encje radia. Możesz rozpocząć od automatycznego wykrywania.</p>
+
+        <button class="auto" id="auto">🔎 Automatycznie wykryj AtlasCube</button>
+
+        ${this._field("station", "Nazwa stacji")}
+        ${this._field("title", "Tytuł utworu")}
+        ${this._field("playback", "Stan odtwarzania")}
+        ${this._field("volume", "Głośność")}
+        ${this._field("source", "Źródło")}
+        ${this._field("previous", "Poprzednia")}
+        ${this._field("play", "Play")}
+        ${this._field("stop", "Stop")}
+        ${this._field("next", "Następna")}
+        ${this._field("availability", "Dostępność / online")}
+
+        <div class="checks">
+          <label>
+            <input type="checkbox" id="show_source" ${this._config.show_source !== false ? "checked" : ""}>
+            <span>Pokaż źródło</span>
+          </label>
+          <label>
+            <input type="checkbox" id="show_volume" ${this._config.show_volume !== false ? "checked" : ""}>
+            <span>Pokaż głośność</span>
+          </label>
+        </div>
+
+        ${complete ? '<div class="ok">✓ Konfiguracja kompletna — karta jest gotowa.</div>' : ""}
+      </div>
+    `;
+
+    this.shadowRoot.querySelector("#auto")?.addEventListener("click", () => {
+      this._autoDetected = true;
+      this._autoDetect();
+      this._render();
+    });
+
+    this.shadowRoot.querySelectorAll("select[data-role]").forEach(el => {
+      el.addEventListener("change", e => {
+        this._set(e.target.dataset.role, e.target.value);
+        this._render();
+      });
+    });
+
+    this.shadowRoot.querySelector("#show_source")?.addEventListener("change", e => {
+      this._config.show_source = e.target.checked;
+      this._fire();
+    });
+
+    this.shadowRoot.querySelector("#show_volume")?.addEventListener("change", e => {
+      this._config.show_volume = e.target.checked;
+      this._fire();
+    });
+  }
+}
+
+customElements.define("atlascube-radio-card-editor", AtlasCubeRadioCardEditor);
+
+
 customElements.define("atlascube-radio-card", AtlasCubeRadioCard);
 
 window.customCards = window.customCards || [];
@@ -496,5 +865,6 @@ window.customCards.push({
   type: "atlascube-radio-card",
   name: "AtlasCube Radio Card",
   description: "Compact modern radio card for AtlasCube in Home Assistant",
-  preview: true
+  preview: true,
+  documentationURL: "https://github.com/MarLip1981/atlascube-radio-card"
 });
