@@ -1,4 +1,4 @@
-/* AtlasCube Radio Card
+/* AtlasCube Radio Card v0.2
  * https://github.com/MarLip1981/atlascube-radio-card
  */
 
@@ -38,7 +38,7 @@ class AtlasCubeRadioCard extends HTMLElement {
     const r = this._config?.radio || {};
     return [
       "station", "title", "playback", "volume", "source",
-      "previous", "play", "stop", "next", "availability"
+      "previous", "play", "stop", "next"
     ].every(key => !!r[key]);
   }
 
@@ -60,7 +60,41 @@ class AtlasCubeRadioCard extends HTMLElement {
   }
 
   _online() {
-    return this._value(this._config.radio?.availability) === "on";
+    const availability = this._config.radio?.availability;
+
+    if (availability) {
+      const state = this._value(availability, "unavailable");
+      return state !== "unavailable" && state !== "unknown" && state !== "off";
+    }
+
+    const r = this._config.radio || {};
+    const states = [r.station, r.title, r.playback, r.volume, r.source]
+      .map(id => id ? this._state(id)?.state : undefined)
+      .filter(state => state !== undefined);
+
+    return states.some(state => state !== "unavailable" && state !== "unknown");
+  }
+
+  _deviceIdForEntity(entityId) {
+    return this._hass?.entities?.[entityId]?.device_id || null;
+  }
+
+  _webUrl() {
+    const r = this._config?.radio || {};
+    const entityIds = [
+      r.station, r.title, r.playback, r.volume, r.source,
+      r.previous, r.play, r.stop, r.next
+    ].filter(Boolean);
+
+    for (const entityId of entityIds) {
+      const deviceId = this._deviceIdForEntity(entityId);
+      const device = deviceId ? this._hass?.devices?.[deviceId] : null;
+      if (device?.configuration_url) {
+        return device.configuration_url;
+      }
+    }
+
+    return null;
   }
 
   _playing() {
@@ -141,6 +175,7 @@ class AtlasCubeRadioCard extends HTMLElement {
     const status = this._status();
     const volume = Number(this._value(r.volume, 0)) || 0;
     const source = this._value(r.source, "");
+    const webUrl = this._webUrl();
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -208,6 +243,14 @@ class AtlasCubeRadioCard extends HTMLElement {
           grid-template-columns: 48px 1fr 28px;
           column-gap: 12px;
           align-items: center;
+        }
+
+        .header.web {
+          cursor: pointer;
+        }
+
+        .header.web:active {
+          transform: scale(.995);
         }
 
         .radio-icon {
@@ -413,9 +456,9 @@ class AtlasCubeRadioCard extends HTMLElement {
       </style>
 
       <ha-card class="card ${playing ? "playing" : ""} ${!online ? "offline" : ""}">
-        <div class="test-badge">WERSJA TESTOWA</div>
+        <div class="test-badge">v0.2 TEST</div>
 
-        <div class="header">
+        <div class="header ${webUrl ? "web" : ""}" id="header" title="${webUrl ? "Otwórz panel AtlasCube" : ""}">
           <ha-icon
             class="radio-icon ${playing && online ? "rainbow" : online ? "idle" : "offline"}"
             icon="mdi:radio">
@@ -491,6 +534,11 @@ class AtlasCubeRadioCard extends HTMLElement {
     const root = this.shadowRoot;
     if (!root) return;
 
+    const webUrl = this._webUrl();
+    root.querySelector("#header")?.addEventListener("click", () => {
+      if (webUrl) window.open(webUrl, "_blank", "noopener,noreferrer");
+    });
+
     root.querySelector("#previous")?.addEventListener("click", () =>
       this._press(this._config.radio.previous)
     );
@@ -548,6 +596,8 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
     this._hass = null;
     this._config = { show_source: true, show_volume: true, radio: {} };
     this._autoDetected = false;
+    this._deviceRegistry = null;
+    this._entityRegistry = null;
   }
 
   setConfig(config) {
@@ -564,8 +614,8 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
     this._hass = hass;
 
     if (!this._autoDetected && this._hass) {
-      this._autoDetect();
       this._autoDetected = true;
+      this._autoDetect().then(() => this._render());
     }
 
     this._render();
@@ -575,8 +625,41 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
     return Object.values(this._hass?.states || {});
   }
 
+  async _loadRegistries() {
+    if (!this._hass) return;
+    try {
+      const [devices, entities] = await Promise.all([
+        this._hass.callWS({ type: "config/device_registry/list" }),
+        this._hass.callWS({ type: "config/entity_registry/list" })
+      ]);
+      this._deviceRegistry = devices || [];
+      this._entityRegistry = entities || [];
+    } catch (err) {
+      console.warn("AtlasCube Radio Card: nie udało się pobrać rejestru urządzeń.", err);
+    }
+  }
+
+  _atlasDevice() {
+    const devices = this._deviceRegistry || [];
+    return devices.find(device => {
+      const identifiers = (device.identifiers || []).map(pair =>
+        Array.isArray(pair) ? pair.join(":") : String(pair)
+      );
+      return String(device.manufacturer || "").toLowerCase() === "atlascube" ||
+        identifiers.some(id => id.toLowerCase().includes("atlascube"));
+    }) || null;
+  }
+
   _find(role) {
     const states = this._states();
+    const atlasDevice = this._atlasDevice();
+    const atlasDeviceId = atlasDevice?.id;
+    const registryByEntity = new Map(
+      (this._entityRegistry || []).map(entity => [entity.entity_id, entity])
+    );
+    const atlas = atlasDeviceId
+      ? states.filter(state => registryByEntity.get(state.entity_id)?.device_id === atlasDeviceId)
+      : states.filter(s => /atlascube/i.test(s.entity_id + " " + (s.attributes?.friendly_name || "")));
 
     const rules = {
       station: [
@@ -609,41 +692,30 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
       ],
       next: [
         s => s.entity_id.startsWith("button.") && /next|następ|nastep/i.test(s.entity_id + " " + (s.attributes?.friendly_name || ""))
-      ],
-      availability: [
-        s => s.entity_id.startsWith("binary_sensor.") && /atlascube/i.test(s.entity_id + " " + (s.attributes?.friendly_name || "")),
-        s => s.entity_id.startsWith("binary_sensor.") && /192_168_1_6|192\.168\.1\.6/.test(s.entity_id)
       ]
     };
-
-    const atlas = states.filter(s =>
-      /atlascube/i.test(s.entity_id + " " + (s.attributes?.friendly_name || ""))
-    );
 
     for (const predicate of (rules[role] || [])) {
       const hit = atlas.find(predicate);
       if (hit) return hit.entity_id;
-
-      const anyHit = states.find(predicate);
-      if (anyHit) return anyHit.entity_id;
     }
-
     return "";
   }
 
-  _autoDetect() {
+  async _autoDetect() {
+    if (!this._deviceRegistry || !this._entityRegistry) {
+      await this._loadRegistries();
+    }
     const r = this._config.radio;
-
     for (const role of [
       "station", "title", "playback", "volume", "source",
-      "previous", "play", "stop", "next", "availability"
+      "previous", "play", "stop", "next"
     ]) {
       if (!r[role]) {
         const found = this._find(role);
         if (found) r[role] = found;
       }
     }
-
     this._config.radio = { ...r };
     this._fire();
   }
@@ -723,7 +795,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
     const r = this._config.radio;
     const complete = [
       "station", "title", "playback", "volume", "source",
-      "previous", "play", "stop", "next", "availability"
+      "previous", "play", "stop", "next"
     ].every(k => !!r[k]);
 
     this.shadowRoot.innerHTML = `
@@ -798,7 +870,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
       </style>
 
       <div class="box">
-        <div class="badge">WERSJA TESTOWA</div>
+        <div class="badge">v0.2 TEST</div>
         <h2>AtlasCube Radio</h2>
         <p>Wybierz encje radia. Możesz rozpocząć od automatycznego wykrywania.</p>
 
@@ -813,7 +885,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
         ${this._field("play", "Play")}
         ${this._field("stop", "Stop")}
         ${this._field("next", "Następna")}
-        ${this._field("availability", "Dostępność / online")}
+        ${this._field("availability", "Dostępność / online — opcjonalna")}
 
         <div class="checks">
           <label>
