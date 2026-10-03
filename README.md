@@ -248,7 +248,19 @@ Pobierz `atlascube-radio-card.js` z tego repozytorium i dodaj go jako zasób Jav
 
 ## Screenshots
 
-Real screenshots will be added before submission to the default HACS repository list.
+### Card in Home Assistant
+
+![AtlasCube Radio Card in Home Assistant](./Screenshot_20261003_183147_Home%20Assistant.jpg)
+
+### Card configuration editor
+
+![AtlasCube Radio Card configuration editor](./Screenshot_20261003_183250_Home%20Assistant.jpg)
+
+### Additional card views
+
+![AtlasCube Radio Card view](./Screenshot_20261003_183309_Home%20Assistant.jpg)
+
+![AtlasCube Radio Card configuration and preview](./Screenshot_20261003_183337_Home%20Assistant.jpg)
 
 ## Development status
 
@@ -274,7 +286,7 @@ Brightness, LED ring, SD card and URL playback controls are intentionally not ex
 - [x] License
 - [x] README documentation
 - [x] HACS validation workflow
-- [ ] Real screenshots in README
+- [x] Real screenshots in README
 - [ ] GitHub repository description
 - [ ] GitHub repository topics
 - [ ] Verify GitHub Issues are enabled
