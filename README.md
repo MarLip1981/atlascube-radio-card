@@ -1,84 +1,295 @@
-# AtlasCube Radio Card v0.3
+# AtlasCube Radio Card
 
-A compact, modern Home Assistant Lovelace card for AtlasCube radio entities.
+A compact, modern Home Assistant Lovelace card for AtlasCube radio devices.
 
-## Features
+> **Current status: v0.3 TEST**
+>
+> The card is currently in public testing and is being prepared for publication as a HACS Dashboard element. The configuration and UI may still change before the first stable release.
 
-- Compact centered Previous / Play-Stop / Next controls
-- Dynamic radio status icon
-- Rainbow LED-style radio animation while playing
-- Station and current track information
+---
+
+## 🇬🇧 English
+
+### Features
+
+- Automatic detection of the AtlasCube device and its entities
+- No hard-coded AtlasCube device name required
+- Compact Previous / Play-Stop / Next controls
+- Large central Play/Stop button
+- Station name and current track information
 - Source selector
-- Volume slider
-- Online/offline state
-- Automatic AtlasCube device/entity discovery in the visual editor
-- Automatic use of the AtlasCube device `configuration_url` for opening its web panel
-- Native MQTT availability is used by default through the availability state propagated by Home Assistant to AtlasCube MQTT entities (no manual ping sensor required)
-- Configurable entity IDs
+- Volume slider and mute control
+- Dynamic online/offline state
+- Rainbow radio animation while playing
+- Wi-Fi-off indicator when the device is offline
+- Automatically opens the AtlasCube web interface from the Home Assistant device configuration_url
+- Uses the native MQTT availability state propagated by Home Assistant
+- Does not require a separate ping sensor
+- Optional manual availability override
 - Optional source and volume sections
 
-## Installation
+### Requirements
 
-### HACS
+- Home Assistant
+- AtlasCube radio integrated into Home Assistant
+- AtlasCube entities available through the MQTT integration
+- HACS is recommended for installation
 
-Add this repository as a custom repository in HACS:
+The card discovers the AtlasCube device from the Home Assistant device/entity registries instead of depending on a fixed entity naming scheme.
 
-- Repository: `MarLip1981/atlascube-radio-card`
-- Type: **Dashboard**
+### Installation with HACS
 
-Then install **AtlasCube Radio Card**.
+#### During testing
 
-After installation, add the resource if HACS does not do so automatically, then use the card in your dashboard.
+Until the card is accepted into the default HACS repository list:
 
-### Manual
+1. Open HACS.
+2. Open the three-dot menu in the upper-right corner.
+3. Select Custom repositories.
+4. Add `MarLip1981/atlascube-radio-card`.
+5. Select Dashboard as the repository type.
+6. Install AtlasCube Radio Card.
+7. Reload the Home Assistant frontend if requested.
 
-Download `atlascube-radio-card.js` and add it as a Lovelace JavaScript resource.
+HACS stores dashboard elements under the Home Assistant `www/community/` directory and handles serving the JavaScript resource. citeturn1search9turn1search17
 
-## Configuration
+#### Future stable publication
 
-```yaml
-type: custom:atlascube-radio-card
+The goal is to publish the card as a regular HACS Dashboard repository. HACS requires a public GitHub repository, a valid `hacs.json`, a suitable repository structure and other repository metadata. A GitHub Release is required when submitting the repository to the default HACS repository list. citeturn1search1turn1search0turn2search1
 
-radio:
-  station: sensor.atlascube_radio_stacja_radiowa
-  title: sensor.atlascube_radio_tytul_utworu
-  playback: sensor.atlascube_9140_playback
-  volume: number.salon_atlascube_radio_glosnosc
-  source: select.atlascube_9140_source
-  previous: button.atlascube_9140_previous
-  play: button.atlascube_9140_play
-  stop: button.atlascube_9140_stop
-  next: button.atlascube_9140_next
-  # availability: opcjonalny ręczny override; domyślnie karta używa natywnej dostępności MQTT
+### Automatic configuration
 
-show_source: true
-show_volume: true
-```
+After adding the card to a dashboard, open the card editor and use:
 
-W wersji v0.2 kliknięcie nagłówka karty otwiera panel WWW radia na podstawie `configuration_url` zapisanej w rejestrze urządzenia Home Assistant. Nie trzeba wpisywać adresu IP ani tworzyć własnego `binary_sensor` do pingowania radia.
+**Automatically detect AtlasCube**
 
-The `brightness`, LED ring, SD card and URL playback controls are intentionally not exposed by default.
+The editor detects the AtlasCube device and fills the main entity fields automatically:
 
-## Status indicator
+- Station
+- Track title
+- Playback state
+- Volume
+- Source
+- Previous
+- Play
+- Stop
+- Next
 
-- Radio icon: online and stopped
-- Music note: online and playing
-- Wi-Fi-off icon: offline
+The Availability field is optional and should normally remain empty.
 
-## Development
+### MQTT availability
 
-This project starts from the tested AtlasCube dashboard design and is being converted into a standalone custom Lovelace card.
+AtlasCube exposes its availability through MQTT. Home Assistant processes this availability information and applies it to the native AtlasCube entities.
 
-### v0.3
+The card therefore uses the state of the native AtlasCube entities as the frontend representation of MQTT availability:
 
-- Removed automatic selection of guessed `binary_sensor` / IP ping helpers for availability.
-- The card now treats the `unavailable` state of the native AtlasCube MQTT entities as the MQTT-derived online/offline signal.
-- Existing v0.2.1 configs that contain an automatically selected IP-named ping sensor are migrated away from that dependency.
-- A manually configured `availability` entity remains available as an explicit override.
+- normal entity state → AtlasCube online
+- `unavailable` / `unknown` → AtlasCube offline
 
-### v0.2
+A separate `binary_sensor` ping helper is not required.
 
-- AtlasCube is detected from the Home Assistant device registry (`manufacturer` / device identifiers).
-- Entities are matched within the detected AtlasCube device instead of assuming a fixed device name such as `atlascube_9140`.
-- The radio web address is read from the device registry `configuration_url`.
-- The manual ping entity is no longer required.
+A manually selected availability entity can still be configured as an explicit override when needed.
+
+### Web interface
+
+Clicking the card header opens the AtlasCube web interface.
+
+The address is obtained automatically from the AtlasCube device `configuration_url`.
+
+You do not need to enter the device IP address manually.
+
+### Manual YAML configuration
+
+    type: custom:atlascube-radio-card
+
+    radio:
+      station: sensor.atlascube_radio_stacja_radiowa
+      title: sensor.atlascube_radio_tytul_utworu
+      playback: sensor.atlascube_9140_playback
+      volume: number.salon_atlascube_radio_glosnosc
+      source: select.atlascube_9140_source
+      previous: button.atlascube_9140_previous
+      play: button.atlascube_9140_play
+      stop: button.atlascube_9140_stop
+      next: button.atlascube_9140_next
+      # availability: optional manual override
+
+    show_source: true
+    show_volume: true
+
+### Status indicators
+
+| Indicator | Meaning |
+|---|---|
+| Radio icon | Online and stopped |
+| Rainbow radio icon | Online and playing |
+| Wi-Fi-off icon | AtlasCube unavailable/offline |
+
+### Manual installation
+
+Download `atlascube-radio-card.js` from this repository and add it as a Lovelace JavaScript resource.
+
+---
+
+## 🇵🇱 Polski
+
+### Funkcje
+
+- Automatyczne wykrywanie urządzenia AtlasCube i jego encji
+- Brak zależności od konkretnej nazwy urządzenia
+- Kompaktowe przyciski Poprzednia / Play-Stop / Następna
+- Duży centralny przycisk Play/Stop
+- Nazwa stacji i tytuł aktualnego utworu
+- Wybór źródła
+- Suwak głośności i wyciszenie
+- Dynamiczny stan online/offline
+- Tęczowa animacja radia podczas odtwarzania
+- Ikona Wi-Fi-off, gdy AtlasCube jest niedostępny
+- Automatyczne otwieranie panelu WWW AtlasCube na podstawie `configuration_url` urządzenia Home Assistant
+- Wykorzystanie natywnej dostępności MQTT obsługiwanej przez Home Assistant
+- Brak potrzeby tworzenia osobnego sensora ping
+- Opcjonalny ręczny override dostępności
+- Opcjonalne sekcje źródła i głośności
+
+### Wymagania
+
+- Home Assistant
+- Radio AtlasCube dodane do Home Assistant
+- Encje AtlasCube dostępne przez integrację MQTT
+- Zalecane HACS
+
+Karta wykrywa urządzenie na podstawie rejestru urządzeń i encji Home Assistant. Nie zakłada jednej, sztywnej nazwy urządzenia ani adresu IP.
+
+### Instalacja przez HACS
+
+#### W okresie testów
+
+Dopóki karta nie zostanie dodana do domyślnej listy repozytoriów HACS:
+
+1. Otwórz HACS.
+2. Otwórz menu trzech kropek w prawym górnym rogu.
+3. Wybierz Custom repositories / Niestandardowe repozytoria.
+4. Dodaj `MarLip1981/atlascube-radio-card`.
+5. Jako typ wybierz Dashboard.
+6. Zainstaluj AtlasCube Radio Card.
+7. Jeśli Home Assistant o to poprosi, przeładuj frontend.
+
+### Automatyczna konfiguracja
+
+Po dodaniu karty do dashboardu otwórz jej edytor i użyj:
+
+**Automatycznie wykryj AtlasCube**
+
+Edytor automatycznie wyszukuje urządzenie AtlasCube i przypisuje główne encje:
+
+- stacja
+- tytuł utworu
+- stan odtwarzania
+- głośność
+- źródło
+- poprzednia
+- play
+- stop
+- następna
+
+Pole Dostępność powinno normalnie pozostać puste.
+
+### Dostępność MQTT
+
+AtlasCube przekazuje dostępność przez MQTT. Home Assistant przetwarza tę informację i uwzględnia ją w stanach natywnych encji AtlasCube.
+
+Karta wykorzystuje więc stan encji jako reprezentację dostępności MQTT:
+
+- normalny stan encji → AtlasCube online
+- `unavailable` / `unknown` → AtlasCube offline
+
+Nie trzeba tworzyć `binary_sensor.192_168_1_6` ani żadnego innego sensora ping.
+
+Pole dostępności pozostaje dostępne jako ręczny override, jeśli w konkretnej instalacji będzie potrzebny.
+
+### Panel WWW AtlasCube
+
+Kliknięcie nagłówka karty otwiera panel WWW AtlasCube.
+
+Adres jest pobierany automatycznie z `configuration_url` urządzenia Home Assistant.
+
+Nie trzeba wpisywać adresu IP ręcznie.
+
+### Konfiguracja YAML
+
+    type: custom:atlascube-radio-card
+
+    radio:
+      station: sensor.atlascube_radio_stacja_radiowa
+      title: sensor.atlascube_radio_tytul_utworu
+      playback: sensor.atlascube_9140_playback
+      volume: number.salon_atlascube_radio_glosnosc
+      source: select.atlascube_9140_source
+      previous: button.atlascube_9140_previous
+      play: button.atlascube_9140_play
+      stop: button.atlascube_9140_stop
+      next: button.atlascube_9140_next
+      # availability: opcjonalny ręczny override
+
+    show_source: true
+    show_volume: true
+
+### Wskaźniki stanu
+
+| Wskaźnik | Znaczenie |
+|---|---|
+| Ikona radia | Online i zatrzymane |
+| Tęczowa ikona radia | Online i odtwarzanie |
+| Ikona Wi-Fi-off | AtlasCube niedostępny/offline |
+
+### Instalacja ręczna
+
+Pobierz `atlascube-radio-card.js` z tego repozytorium i dodaj go jako zasób JavaScript Lovelace.
+
+---
+
+## Screenshots
+
+Real screenshots will be added before submission to the default HACS repository list.
+
+## Development status
+
+**v0.3 TEST**
+
+This version is intentionally still marked as a test release.
+
+The current v0.3 test focuses on:
+
+- AtlasCube auto-discovery
+- native MQTT-derived availability
+- automatic web interface discovery
+- online/offline card behavior
+- stable basic radio controls
+
+Brightness, LED ring, SD card and URL playback controls are intentionally not exposed by default.
+
+## HACS publication checklist
+
+- [x] Public GitHub repository
+- [x] `hacs.json`
+- [x] Dashboard/plugin repository structure
+- [x] License
+- [x] README documentation
+- [x] HACS validation workflow
+- [ ] Real screenshots in README
+- [ ] GitHub repository description
+- [ ] GitHub repository topics
+- [ ] Verify GitHub Issues are enabled
+- [ ] Create the first GitHub Release
+- [ ] Run and pass HACS validation
+- [ ] Submit repository to the HACS default `plugin` list
+
+HACS documentation states that default repositories must pass HACS validation, have a release and meet repository requirements such as description, issues and topics. Plugins/themes also require images in the README for default-repository validation. citeturn2search1turn2search0
+
+## License
+
+MIT License — see [LICENSE](LICENSE).
+
+## Repository
+
+`MarLip1981/atlascube-radio-card`
