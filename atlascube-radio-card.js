@@ -1,4 +1,4 @@
-/* AtlasCube Radio Card v0.2
+/* AtlasCube Radio Card v0.2.1
  * https://github.com/MarLip1981/atlascube-radio-card
  */
 
@@ -745,6 +745,46 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
         if (found) r[role] = found;
       }
     }
+
+    // Availability is deliberately optional. If AtlasCube has a native
+    // binary_sensor registered on the same device, use it automatically.
+    // Otherwise leave the field empty and let the card use the native
+    // entity states as its fallback online/offline signal.
+    if (!r.availability) {
+      const registryByEntity = new Map(
+        (this._entityRegistry || []).map(entity => [entity.entity_id, entity])
+      );
+      const atlasDevice = this._atlasDevice();
+      const atlasDeviceId = atlasDevice?.id;
+
+      const binarySensors = this._states().filter(state =>
+        state.entity_id.startsWith("binary_sensor.")
+      );
+
+      const sameDevice = atlasDeviceId
+        ? binarySensors.filter(state =>
+            registryByEntity.get(state.entity_id)?.device_id === atlasDeviceId
+          )
+        : [];
+
+      const semantic = binarySensors.filter(state =>
+        /atlas|online|availability|dostęp|dostep|status|ping/i.test(
+          state.entity_id + " " + (state.attributes?.friendly_name || "")
+        )
+      );
+
+      const ipNamed = binarySensors.filter(state =>
+        /^binary_sensor\\.\\d{1,3}(?:_\\d{1,3}){3}$/.test(state.entity_id)
+      );
+
+      const candidate = sameDevice[0] || semantic[0] ||
+        (ipNamed.length === 1 ? ipNamed[0] : null);
+
+      if (candidate) {
+        r.availability = candidate.entity_id;
+      }
+    }
+
     this._config.radio = { ...r };
     this._fire();
   }
