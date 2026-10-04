@@ -383,21 +383,6 @@ class AtlasCubeRadioCard extends HTMLElement {
           opacity: .55;
         }
 
-        .test-badge {
-          display:inline-flex;
-          align-items:center;
-          min-height:22px;
-          margin:0 8px 2px;
-          padding:3px 8px;
-          border-radius:8px;
-          background:rgba(255,193,7,.12);
-          border:1px solid rgba(255,193,7,.25);
-          color:#ffc107;
-          font-size:9px;
-          font-weight:700;
-          letter-spacing:.7px;
-        }
-
 
         .art-area {
           position: relative;
@@ -739,8 +724,6 @@ class AtlasCubeRadioCard extends HTMLElement {
       </style>
 
       <ha-card class="card ${playing ? "playing" : ""} ${!online ? "offline" : ""}">
-        <div class="test-badge">v0.3 MQTT TEST</div>
-
         <div class="art-area">
           ${background}
           <div class="art-content">
@@ -1117,17 +1100,6 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
         }
         h2 { margin:0 0 4px; font-size:18px; }
         p { margin:0 0 16px; opacity:.65; font-size:13px; }
-        .badge {
-          display:inline-block;
-          padding:3px 7px;
-          border-radius:6px;
-          background:rgba(255,193,7,.14);
-          color:#c78a00;
-          font-size:10px;
-          font-weight:700;
-          letter-spacing:.5px;
-          margin-bottom:12px;
-        }
         .auto {
           width:100%;
           min-height:42px;
@@ -1178,7 +1150,6 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
       </style>
 
       <div class="box">
-        <div class="badge">v0.3 MQTT TEST</div>
         <h2>AtlasCube Radio</h2>
         <p>Karta wykrywa AtlasCube i korzysta z natywnej dostępności MQTT przez stany jego encji.</p>
 
