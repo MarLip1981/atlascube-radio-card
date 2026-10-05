@@ -1,15 +1,15 @@
 class AtlasCubeRadioCard extends HTMLElement {
-  static getConfigElement() {
-    return document.createElement("atlascube-radio-card-editor");
-  }
-
-  static getStubConfig() {
-    return {
-      show_artwork: true,
-      show_source: true,
-      show_volume: true,
-      radio: {}
-    };
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = null;
+    this._hass = null;
+    this._deviceRegistry = null;
+    this._entityRegistry = null;
+    this._registryLoading = false;
+    this._cache = new Map();
+    this._requestId = 0;
+    this._lastTrack = "";
   }
 
   setConfig(config) {
@@ -23,14 +23,20 @@ class AtlasCubeRadioCard extends HTMLElement {
 
     this._cache = new Map();
     this._requestId = 0;
-    this._lastTrack = "";
-    this._hass = null;
-    this._deviceRegistry = null;
-    this._entityRegistry = null;
-    this._registryLoading = false;
-
-    this.attachShadow({ mode: "open" });
     this._render();
+  }
+
+  static getConfigElement() {
+    return document.createElement("atlascube-radio-card-editor");
+  }
+
+  static getStubConfig() {
+    return {
+      show_artwork: true,
+      show_source: true,
+      show_volume: true,
+      radio: {}
+    };
   }
 
   set hass(hass) {
