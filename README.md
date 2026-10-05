@@ -2,7 +2,7 @@
 
 A compact, modern Home Assistant Lovelace card for AtlasCube radio devices.
 
-> **Current status: v0.3 TEST**
+> **Current status: v0.4 TEST**
 >
 > The card is currently in public testing and is being prepared for publication as a HACS Dashboard element. The configuration and UI may still change before the first stable release.
 
@@ -16,6 +16,7 @@ A compact, modern Home Assistant Lovelace card for AtlasCube radio devices.
 - No hard-coded AtlasCube device name required
 - Compact Previous / Play-Stop / Next controls
 - Large central Play/Stop button
+- Optional album artwork with artist, title and album information
 - Station name and current track information
 - Source selector
 - Volume slider and mute control
@@ -26,7 +27,7 @@ A compact, modern Home Assistant Lovelace card for AtlasCube radio devices.
 - Uses the native MQTT availability state propagated by Home Assistant
 - Does not require a separate ping sensor
 - Optional manual availability override
-- Optional source and volume sections
+- Optional album artwork, source and volume sections
 
 ### Requirements
 
@@ -112,8 +113,18 @@ You do not need to enter the device IP address manually.
       next: button.atlascube_9140_next
       # availability: optional manual override
 
+    show_artwork: true
+    show_artwork: true
     show_source: true
     show_volume: true
+
+### Album artwork
+
+Album artwork is optional and can be enabled or disabled in the card editor.
+
+When enabled and the radio is playing, the card uses the current `Artist - Title` metadata to search the iTunes Search API, caches the result and displays a 200×200 cover with a subtle 18 px blurred background. When the radio is stopped, the artwork and track information are hidden while the blurred background is retained.
+
+When artwork is disabled, the card returns to the compact radio presentation with the animated rainbow radio icon while playing.
 
 ### Status indicators
 
@@ -137,6 +148,7 @@ Download `atlascube-radio-card.js` from this repository and add it as a Lovelace
 - Brak zależności od konkretnej nazwy urządzenia
 - Kompaktowe przyciski Poprzednia / Play-Stop / Następna
 - Duży centralny przycisk Play/Stop
+- Opcjonalne okładki utworów z wykonawcą, tytułem i albumem
 - Nazwa stacji i tytuł aktualnego utworu
 - Wybór źródła
 - Suwak głośności i wyciszenie
@@ -147,7 +159,7 @@ Download `atlascube-radio-card.js` from this repository and add it as a Lovelace
 - Wykorzystanie natywnej dostępności MQTT obsługiwanej przez Home Assistant
 - Brak potrzeby tworzenia osobnego sensora ping
 - Opcjonalny ręczny override dostępności
-- Opcjonalne sekcje źródła i głośności
+- Opcjonalne okładki, sekcje źródła i głośności
 
 ### Wymagania
 
@@ -232,6 +244,14 @@ Nie trzeba wpisywać adresu IP ręcznie.
     show_source: true
     show_volume: true
 
+### Okładki utworów
+
+Okładki utworów można włączyć lub wyłączyć w edytorze karty.
+
+Po włączeniu, podczas odtwarzania karta wyszukuje okładkę na podstawie metadanych `Artysta - Tytuł`, zapamiętuje wynik i pokazuje okładkę 200×200 px z delikatnie rozmytym tłem 18 px. Po zatrzymaniu radia okładka i informacje o utworze są ukrywane, ale rozmyte tło pozostaje.
+
+Po wyłączeniu okładek karta wraca do kompaktowego widoku radia z tęczową animacją podczas odtwarzania.
+
 ### Wskaźniki stanu
 
 | Wskaźnik | Znaczenie |
@@ -264,13 +284,14 @@ Pobierz `atlascube-radio-card.js` z tego repozytorium i dodaj go jako zasób Jav
 
 ## Development status
 
-**v0.3 TEST**
+**v0.4 TEST**
 
 This version is intentionally still marked as a test release.
 
-The current v0.3 test focuses on:
+The current v0.4 test focuses on:
 
 - AtlasCube auto-discovery
+- optional album artwork
 - native MQTT-derived availability
 - automatic web interface discovery
 - online/offline card behavior
