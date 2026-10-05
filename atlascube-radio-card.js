@@ -22,6 +22,7 @@ class AtlasCubeRadioCard extends HTMLElement {
     this._config = {
       show_source: true,
       show_volume: true,
+      show_artwork: false,
       ...config,
       radio: { ...(config?.radio || {}) }
     };
@@ -37,6 +38,7 @@ class AtlasCubeRadioCard extends HTMLElement {
     return {
       show_source: true,
       show_volume: true,
+      show_artwork: false,
       radio: {}
     };
   }
@@ -86,6 +88,7 @@ class AtlasCubeRadioCard extends HTMLElement {
   }
 
   getCardSize() {
+    if (this._config?.show_artwork) return 9;
     return this._config?.show_source === false ? 4 : 5;
   }
 
@@ -724,16 +727,18 @@ class AtlasCubeRadioCard extends HTMLElement {
       </style>
 
       <ha-card class="card ${playing ? "playing" : ""} ${!online ? "offline" : ""}">
-        <div class="art-area">
-          ${background}
-          <div class="art-content">
-            <div class="art-station">${this._escape(station)}</div>
-            ${cover}
-            <div class="art-artist">${this._escape(artArtist || (titleState ? this._parseTrack(titleState).artist : "") || "Nieznany wykonawca")}</div>
-            <div class="art-title">${this._escape(artTitle)}</div>
-            ${album ? `<div class="art-album">${this._escape(album)}</div>` : ""}
+        ${this._config.show_artwork ? `
+          <div class="art-area">
+            ${background}
+            <div class="art-content">
+              <div class="art-station">${this._escape(station)}</div>
+              ${cover}
+              <div class="art-artist">${this._escape(artArtist || (titleState ? this._parseTrack(titleState).artist : "") || "Nieznany wykonawca")}</div>
+              <div class="art-title">${this._escape(artTitle)}</div>
+              ${album ? `<div class="art-album">${this._escape(album)}</div>` : ""}
+            </div>
           </div>
-        </div>
+        ` : ""}
 
         <div class="header ${webUrl ? "web" : ""}" id="header" title="${webUrl ? "Otwórz panel AtlasCube" : ""}">
           <ha-icon
@@ -871,7 +876,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._hass = null;
-    this._config = { show_source: true, show_volume: true, radio: {} };
+    this._config = { show_source: true, show_volume: true, show_artwork: false, radio: {} };
     this._autoDetected = false;
     this._deviceRegistry = null;
     this._entityRegistry = null;
@@ -881,6 +886,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
     this._config = {
       show_source: true,
       show_volume: true,
+      show_artwork: false,
       ...config,
       radio: { ...(config?.radio || {}) }
     };
@@ -1130,7 +1136,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
         }
         .checks {
           display:grid;
-          grid-template-columns:1fr 1fr;
+          grid-template-columns:1fr 1fr 1fr;
           gap:10px;
           margin-top:4px;
         }
@@ -1168,6 +1174,10 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
 
         <div class="checks">
           <label>
+            <input type="checkbox" id="show_artwork" ${this._config.show_artwork === true ? "checked" : ""}>
+            <span>Okładka utworu</span>
+          </label>
+          <label>
             <input type="checkbox" id="show_source" ${this._config.show_source !== false ? "checked" : ""}>
             <span>Pokaż źródło</span>
           </label>
@@ -1192,6 +1202,12 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
         this._set(e.target.dataset.role, e.target.value);
         this._render();
       });
+    });
+
+    this.shadowRoot.querySelector("#show_artwork")?.addEventListener("change", e => {
+      this._config.show_artwork = e.target.checked;
+      this._fire();
+      this._render();
     });
 
     this.shadowRoot.querySelector("#show_source")?.addEventListener("change", e => {
