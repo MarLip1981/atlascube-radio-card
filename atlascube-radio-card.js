@@ -1,143 +1,245 @@
-/* AtlasCube Radio Card v0.3
- * https://github.com/MarLip1981/atlascube-radio-card
- */
-
 class AtlasCubeRadioCard extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-    this._config = null;
-    this._hass = null;
-    this._bound = false;
-    this._deviceRegistry = null;
-    this._entityRegistry = null;
-    this._registryLoading = false;
-  }
-
-  setConfig(config) {
-    this._config = {
-      show_source: true,
-      show_volume: true,
-      ...config,
-      radio: { ...(config?.radio || {}) }
-    };
-
-    this._render();
-  }
-
-  static getConfigElement() {
-    return document.createElement("atlascube-radio-card-editor");
-  }
-
   static getStubConfig() {
     return {
+      show_artwork: true,
       show_source: true,
       show_volume: true,
       radio: {}
     };
   }
 
-  _isConfigured() {
-    const r = this._config?.radio || {};
-    return [
-      "station", "title", "playback", "volume", "source",
-      "previous", "play", "stop", "next"
-    ].every(key => !!r[key]);
+  setConfig(config) {
+    this._config = {
+      show_artwork: true,
+      show_source: true,
+      show_volume: true,
+      ...config,
+      radio: { ...(config?.radio || {}) }
+    };
+
+    this._cache = new Map();
+    this._requestId = 0;
+    this._lastTrack = "";
+    this._hass = null;
+    this._deviceRegistry = null;
+    this._entityRegistry = null;
+    this._registryLoading = false;
+
+    this.attachShadow({ mode: "open" });
+    this._render();
   }
 
   set hass(hass) {
     this._hass = hass;
-
-    if (!this._registryLoading && (!this._deviceRegistry || !this._entityRegistry)) {
-      this._loadRegistries().then(() => this._render());
+    if (!this._deviceRegistry && !this._registryLoading) this._loadRegistries().then(() => this._render());
+    const track = this._getTrack();
+    if (track !== this._lastTrack) {
+      this._lastTrack = track;
+      if (this._config.show_artwork !== false) this._loadArtwork();
     }
-
     this._render();
+  }
+
+  getCardSize() {
+    return this._config?.show_artwork === false ? 5 : 6;
   }
 
   async _loadRegistries() {
     if (!this._hass || this._registryLoading) return;
-
     this._registryLoading = true;
-
     try {
       const [devices, entities] = await Promise.all([
         this._hass.callWS({ type: "config/device_registry/list" }),
         this._hass.callWS({ type: "config/entity_registry/list" })
       ]);
-
       this._deviceRegistry = devices || [];
       this._entityRegistry = entities || [];
     } catch (err) {
-      console.warn("AtlasCube Radio Card: nie udało się pobrać rejestru urządzeń.", err);
+      console.warn("AtlasCube Album Art Test: nie udało się pobrać rejestru urządzeń.", err);
     } finally {
       this._registryLoading = false;
     }
   }
 
-  getCardSize() {
-    return this._config?.show_source === false ? 4 : 5;
-  }
-
-  _state(id) {
-    return this._hass?.states?.[id];
-  }
-
-  _value(id, fallback = "") {
-    return this._state(id)?.state ?? fallback;
-  }
-
-  _online() {
-    const r = this._config.radio || {};
-    const availability = r.availability;
-
-    // v0.3: MQTT availability is not read directly by the browser.
-    // Home Assistant applies the MQTT availability topic to the native
-    // AtlasCube entities, so their "unavailable" state is the frontend-safe
-    // representation of the MQTT online/offline state.
-    //
-    // Keep an explicitly configured availability entity as an override.
-    if (availability) {
-      const state = this._value(availability, "unavailable");
-      return state !== "unavailable" && state !== "unknown" && state !== "off";
-    }
-
-    const states = [r.station, r.title, r.playback, r.volume, r.source]
-      .map(id => id ? this._state(id)?.state : undefined)
-      .filter(state => state !== undefined);
-
-    if (!states.length) return false;
-
-    return states.some(state =>
-      state !== "unavailable" && state !== "unknown"
-    );
-  }
-
   _webUrl() {
-    const r = this._config?.radio || {};
     const entityIds = [
-      r.station, r.title, r.playback, r.volume, r.source,
-      r.previous, r.play, r.stop, r.next
-    ].filter(Boolean);
-
-    const entityRegistry = this._entityRegistry || [];
-    const deviceRegistry = this._deviceRegistry || [];
+      this._config.radio.title,
+      "sensor.atlascube_radio_stacja_radiowa",
+      "sensor.atlascube_9140_playback",
+      "number.salon_atlascube_radio_glosnosc",
+      "select.atlascube_9140_source",
+      "button.atlascube_9140_previous",
+      "button.atlascube_9140_play",
+      "button.atlascube_9140_stop",
+      "button.atlascube_9140_next"
+    ];
 
     for (const entityId of entityIds) {
-      const entity = entityRegistry.find(item => item.entity_id === entityId);
+      const entity = (this._entityRegistry || []).find(item => item.entity_id === entityId);
       if (!entity?.device_id) continue;
-
-      const device = deviceRegistry.find(item => item.id === entity.device_id);
-      if (device?.configuration_url) {
-        return device.configuration_url;
-      }
+      const device = (this._deviceRegistry || []).find(item => item.id === entity.device_id);
+      if (device?.configuration_url) return device.configuration_url;
     }
 
     return null;
   }
 
-  _playing() {
-    return this._value(this._config.radio?.playback) === "playing";
+  _getTrack() {
+    const stateObj = this._hass?.states?.[this._config.radio.title];
+    const value = stateObj?.state;
+    return value && value !== "unknown" && value !== "unavailable"
+      ? value
+      : "";
+  }
+
+  _parseTrack(value) {
+    const text = String(value || "").trim();
+    const match = text.match(/^(.+?)\s+-\s+(.+)$/);
+
+    if (!match) {
+      return { artist: "", title: text };
+    }
+
+    return {
+      artist: match[1].trim(),
+      title: match[2].trim()
+    };
+  }
+
+  _normalize(value) {
+    return String(value || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  }
+
+  _scoreResult(result, artist, title) {
+    const wantedArtist = this._normalize(artist);
+    const wantedTitle = this._normalize(title);
+    const resultArtist = this._normalize(result.artistName);
+    const resultTitle = this._normalize(result.trackName);
+
+    let score = 0;
+
+    if (resultArtist === wantedArtist) score += 100;
+    else if (resultArtist.includes(wantedArtist) || wantedArtist.includes(resultArtist)) score += 40;
+
+    if (resultTitle === wantedTitle) score += 100;
+    else if (resultTitle.includes(wantedTitle) || wantedTitle.includes(resultTitle)) score += 40;
+
+    if (result.collectionName) {
+      const album = this._normalize(result.collectionName);
+      if (album.includes(wantedTitle)) score += 5;
+    }
+
+    return score;
+  }
+
+  async _loadArtwork() {
+    const rawTrack = this._getTrack();
+    const { artist, title } = this._parseTrack(rawTrack);
+    const requestId = ++this._requestId;
+
+    if (!rawTrack || !title) {
+      this._applyResult({ rawTrack, artist, title, artwork: null, album: "" });
+      return;
+    }
+
+    const cacheKey = this._normalize(rawTrack);
+
+    if (this._cache.has(cacheKey)) {
+      this._applyResult({
+        rawTrack,
+        artist,
+        title,
+        ...this._cache.get(cacheKey)
+      });
+      return;
+    }
+
+    try {
+      const query = encodeURIComponent(`${artist} ${title}`);
+      const url =
+        `https://itunes.apple.com/search?term=${query}&country=PL&media=music&entity=song&limit=10`;
+
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (requestId !== this._requestId) return;
+
+      const results = Array.isArray(data.results) ? data.results : [];
+
+      let best = null;
+      let bestScore = -1;
+
+      for (const result of results) {
+        const score = this._scoreResult(result, artist, title);
+
+        if (score > bestScore) {
+          bestScore = score;
+          best = result;
+        }
+      }
+
+      const artwork = best?.artworkUrl100
+        ? best.artworkUrl100
+            .replace(/100x100bb\./i, "600x600bb.")
+            .replace(/^http:/i, "https:")
+        : null;
+
+      const result = {
+        artwork,
+        album: best?.collectionName || "",
+        matchScore: bestScore
+      };
+
+      this._cache.set(cacheKey, result);
+
+      this._applyResult({
+        rawTrack,
+        artist,
+        title,
+        ...result
+      });
+    } catch (error) {
+      if (requestId !== this._requestId) return;
+
+      this._applyResult({
+        rawTrack,
+        artist,
+        title,
+        artwork: null,
+        album: "",
+        error: error?.message || "Nieznany błąd"
+      });
+    }
+  }
+
+  _applyResult(data) {
+    this._status = "";
+    this._data = data;
+    this._render();
+  }
+
+  _setStatus(status) {
+    this._status = status;
+    this._render();
+  }
+
+  _escape(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 
   async _press(entityId) {
@@ -147,337 +249,165 @@ class AtlasCubeRadioCard extends HTMLElement {
     });
   }
 
-  async _setVolume(value) {
-    if (!this._hass) return;
-    await this._hass.callService("number", "set_value", {
-      entity_id: this._config.radio.volume,
-      value
-    });
-  }
-
-  _status() {
-    if (!this._online()) {
-      return { icon: "mdi:wifi-off", color: "#f44336", playing: false };
+  _online() {
+    const r = this._config?.radio || {};
+    const availability = r.availability;
+    if (availability) {
+      const state = this._hass?.states?.[availability]?.state;
+      return state !== undefined && state !== "unavailable" && state !== "unknown" && state !== "off";
     }
-
-    if (this._playing()) {
-      return { icon: "mdi:music-note", color: "#4caf50", playing: true };
-    }
-
-    return { icon: "mdi:radio", color: "rgba(255,255,255,.60)", playing: false };
-  }
-
-  _icon(name) {
-    return `<ha-icon icon="${name}"></ha-icon>`;
+    const states = [r.station, r.title, r.playback, r.volume, r.source]
+      .map(id => id ? this._hass?.states?.[id]?.state : undefined)
+      .filter(state => state !== undefined);
+    if (!states.length) return false;
+    return states.some(state => state !== "unavailable" && state !== "unknown");
   }
 
   _render() {
-    if (!this._config || !this._hass) return;
+    if (!this.shadowRoot) return;
 
-    if (!this._isConfigured()) {
-      this.shadowRoot.innerHTML = `
-        <style>
-          :host { display:block; width:100%; }
-          .setup {
-            border-radius:26px;
-            padding:24px;
-            background:rgba(255,255,255,.045);
-            border:1px solid rgba(255,193,7,.30);
-            color:var(--primary-text-color);
-            text-align:center;
-          }
-          .setup ha-icon {
-            --mdc-icon-size:38px;
-            color:#ffc107;
-          }
-          .setup-title { font-size:17px; font-weight:600; margin-top:8px; }
-          .setup-text { font-size:13px; opacity:.65; margin-top:6px; }
-        </style>
-        <ha-card class="setup">
-          <ha-icon icon="mdi:radio-tower"></ha-icon>
-          <div class="setup-title">AtlasCube Radio</div>
-          <div class="setup-text">Skonfiguruj kartę w edytorze, aby rozpocząć.</div>
-        </ha-card>
-      `;
-      return;
-    }
-
-    const r = this._config.radio;
+    const data = this._data || {};
+    const artwork = data.artwork || "";
+    const r = this._config?.radio || {};
     const online = this._online();
-    const playing = this._playing();
-    const station = this._value(r.station, "AtlasCube");
-    const titleState = this._value(r.title, "");
-    const title = titleState && titleState !== "unknown" && titleState !== "unavailable"
-      ? titleState
-      : "Brak informacji o utworze";
-
-    const status = this._status();
-    const volume = Number(this._value(r.volume, 0)) || 0;
-    const source = this._value(r.source, "");
+    const station = this._hass?.states?.[r.station]?.state || "AtlasCube";
+    const artist = data.artist || "";
+    const title = data.title || "Brak informacji o utworze";
+    const album = data.album || "";
+    const playback = this._hass?.states?.[r.playback]?.state || "";
+    const playing = playback === "playing";
+    const volumeState = this._hass?.states?.[r.volume]?.state;
+    const volume = Number(volumeState);
+    const volumeValue = Number.isFinite(volume) ? Math.max(0, Math.min(100, volume)) : 0;
+    const sourceEntity = r.source;
+    const sourceState = this._hass?.states?.[sourceEntity];
+    const sourceValue = sourceState?.state || "";
+    const sourceOptions = Array.isArray(sourceState?.attributes?.options) ? sourceState.attributes.options : [];
     const webUrl = this._webUrl();
+    const artworkEnabled = this._config.show_artwork !== false;
+
+    const background = artworkEnabled && online && artwork
+      ? `
+        <img class="blur-bg-image" src="${artwork}" alt="" aria-hidden="true">
+        <div class="shade"></div>
+      `
+      : `<div class="fallback-bg"></div>`;
+
+    const image = artworkEnabled && online && playing
+      ? (artwork
+        ? `<img class="cover" src="${artwork}" alt="Okładka">`
+        : `<div class="no-cover"><ha-icon class="fallback-radio rainbow" icon="mdi:radio"></ha-icon></div>`)
+      : "";
 
     this.shadowRoot.innerHTML = `
       <style>
         :host {
           display: block;
-          width: 100%;
-        }
-
-        * {
-          box-sizing: border-box;
+          color: var(--primary-text-color);
         }
 
         .card {
-          border-radius: 26px;
-          padding: 10px;
+          position: relative;
           overflow: hidden;
-          transition: all .4s ease;
-          color: var(--primary-text-color);
-          background: rgba(255,255,255,.045);
-          border: 1px solid rgba(255,255,255,.08);
-        }
-
-        .card.playing {
-          background:
-            radial-gradient(
-              circle at 50% 42%,
-              rgba(33,150,243,.18) 0%,
-              rgba(33,150,243,.06) 38%,
-              rgba(0,0,0,.18) 100%
-            );
-          border-color: rgba(33,150,243,.35);
-          box-shadow:
-            0 0 18px rgba(33,150,243,.16),
-            inset 0 0 30px rgba(33,150,243,.04);
-        }
-
-        .card.offline {
-          background: rgba(25,25,25,.45);
-          border-color: rgba(255,255,255,.05);
-          filter: grayscale(.7);
-          opacity: .55;
-        }
-
-        .test-badge {
-          display:inline-flex;
-          align-items:center;
-          min-height:22px;
-          margin:0 8px 2px;
-          padding:3px 8px;
-          border-radius:8px;
-          background:rgba(255,193,7,.12);
-          border:1px solid rgba(255,193,7,.25);
-          color:#ffc107;
-          font-size:9px;
-          font-weight:700;
-          letter-spacing:.7px;
-        }
-
-        .header {
-          height: 76px;
-          padding: 8px 14px;
+          min-height: 0;
           border-radius: 20px;
-          display: grid;
-          grid-template-areas: "icon text status";
-          grid-template-columns: 48px 1fr 28px;
-          column-gap: 12px;
+          border: 1px solid rgba(255,255,255,.10);
+          background: transparent;
+          box-shadow: 0 4px 18px rgba(0,0,0,.25);
+          padding: 18px;
+          box-sizing: border-box;
+        }
+
+        .blur-bg-image,
+        .shade,
+        .fallback-bg {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+        }
+
+        .card.has-art { min-height:500px; }
+        .card.playing-noart { background: radial-gradient(circle at 50% 42%, rgba(33,150,243,.18) 0%, rgba(33,150,243,.06) 38%, rgba(0,0,0,.18) 100%); border-color:rgba(33,150,243,.35); }
+        .card.offline { background:rgba(25,25,25,.45); border-color:rgba(244,67,54,.18); }
+
+        .blur-bg-image {
+          display: block;
+          object-fit: cover;
+          object-position: center;
+          filter: blur(18px);
+          transform: scale(1.0);
+          opacity: .82;
+          z-index: 0;
+        }
+
+        .shade {
+          z-index: 1;
+          background: linear-gradient(180deg, rgba(0,0,0,.18), rgba(0,0,0,.58));
+        }
+
+        .fallback-bg {
+          z-index: 0;
+          background: radial-gradient(circle at 50% 42%, rgba(33,150,243,.18) 0%, rgba(33,150,243,.06) 38%, rgba(0,0,0,.18) 100%);
+        }
+
+        .content {
+          position: relative;
+          z-index: 1;
+          min-height: 464px;
+          display: flex;
+          flex-direction: column;
           align-items: center;
         }
 
-        .header.web {
-          cursor: pointer;
-        }
+        .offline-icon { width:72px; height:72px; display:grid; place-items:center; margin:18px 0 10px; }
+        .offline-icon ha-icon { --mdc-icon-size:58px; color:#f44336; }
+        .offline-title { font-size:17px; font-weight:700; }
+        .offline-text { font-size:13px; opacity:.65; margin-top:4px; }
 
-        .header.web:active {
-          transform: scale(.995);
-        }
-
-        .radio-icon {
-          grid-area: icon;
-          width: 38px;
-          height: 38px;
-        }
-
-        .radio-icon.rainbow {
-          color: #ff0000;
-          animation: atlas-rainbow 4s linear infinite;
-        }
-
-        .radio-icon.offline {
-          color: rgba(255,255,255,.25);
-        }
-
-        .radio-icon.idle {
-          color: rgba(255,255,255,.55);
-        }
-
-        .texts {
-          grid-area: text;
-          min-width: 0;
-          display: grid;
-          grid-template-rows: 1fr 1fr;
-        }
+        .brand { display:flex; align-items:center; justify-content:center; gap:7px; margin-bottom:5px; font-size:17px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; opacity:.9; }
+        .brand-icon { font-size:20px; line-height:1; }
+        .brand-cube { opacity:.58; }
+        .brand.web { cursor:pointer; }
+        .brand.web:active { transform:scale(.995); }
 
         .station {
-          align-self: end;
-          font-size: 16px;
+          margin-bottom: 12px;
+          font-size: 14px;
           font-weight: 600;
-          line-height: 20px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+          letter-spacing: .04em;
+          opacity: .82;
+          text-align: center;
         }
 
-        .title {
-          align-self: start;
-          font-size: 12px;
-          opacity: .65;
-          line-height: 18px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+        .cover,
+        .no-cover {
+          width: 200px;
+          height: 200px;
+          border-radius: 14px;
+          object-fit: cover;
+          box-shadow: 0 8px 30px rgba(0,0,0,.45);
+          background: rgba(0,0,0,.25);
         }
 
-        .status {
-          grid-area: status;
-          justify-self: center;
-          width: 22px;
-          height: 22px;
-        }
-
-        .status.playing {
-          animation: atlas-status-pulse 1.8s ease-in-out infinite;
-        }
-
-        .source {
-          height: 42px;
-          margin: 0 4px 5px;
-          padding: 0 10px;
-          border-radius: 15px;
-          background: rgba(255,255,255,.035);
-          border: 1px solid rgba(255,255,255,.06);
+        .no-cover {
           display: flex;
           align-items: center;
-          gap: 10px;
-          color: var(--primary-text-color);
-          font-size: 12px;
-          opacity: .8;
-        }
-
-        .source ha-icon {
-          --mdc-icon-size: 21px;
-          color: rgba(33,150,243,.85);
-        }
-
-        .source select {
-          flex: 1;
-          min-width: 0;
-          background: transparent;
-          border: 0;
-          outline: 0;
-          color: inherit;
-          font: inherit;
-        }
-
-        .source option {
-          color: #111;
-        }
-
-        .controls {
-          min-height: 66px;
-          display: flex;
           justify-content: center;
-          align-items: center;
+          color: rgba(255,255,255,.35);
         }
 
-        button {
-          font: inherit;
-          color: inherit;
-          cursor: pointer;
-          border: 1px solid rgba(255,255,255,.07);
-          outline: none;
-          -webkit-tap-highlight-color: transparent;
+        .fallback-radio {
+          --mdc-icon-size: 92px;
+          width: 92px;
+          height: 92px;
         }
 
-        .skip {
-          width: 58px;
-          height: 58px;
-          flex: 0 0 58px;
-          border-radius: 20px;
-          background: rgba(255,255,255,.045);
-          display: grid;
-          place-items: center;
-        }
+        .fallback-radio.idle { color: rgba(255,255,255,.55); }
 
-        .skip ha-icon {
-          --mdc-icon-size: 27px;
-          color: rgba(255,255,255,.7);
-        }
-
-        .main {
-          width: 66px;
-          height: 66px;
-          flex: 0 0 66px;
-          margin: 0 10px;
-          border-radius: 50%;
-          display: grid;
-          place-items: center;
-        }
-
-        .main.playing {
-          background: rgba(33,150,243,.20);
-          border-color: rgba(33,150,243,.55);
-          box-shadow: 0 0 22px rgba(33,150,243,.30);
-        }
-
-        .main.stopped {
-          background: rgba(255,255,255,.08);
-          border-color: rgba(255,255,255,.10);
-          box-shadow: 0 4px 12px rgba(0,0,0,.15);
-        }
-
-        .main ha-icon {
-          --mdc-icon-size: 31px;
-        }
-
-        .main.playing ha-icon {
-          color: #2196f3;
-        }
-
-        .main.stopped ha-icon {
-          color: rgba(255,255,255,.9);
-        }
-
-        .volume {
-          height: 44px;
-          margin: 5px 4px 0;
-          padding: 0 8px;
-          border-radius: 15px;
-          background: rgba(255,255,255,.035);
-          border: 1px solid rgba(255,255,255,.06);
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .volume button {
-          width: 30px;
-          height: 30px;
-          padding: 0;
-          border: 0;
-          background: transparent;
-          display: grid;
-          place-items: center;
-        }
-
-        .volume button ha-icon {
-          --mdc-icon-size: 21px;
-        }
-
-        .volume input {
-          flex: 1;
-          min-width: 0;
-          accent-color: #2196f3;
+        .fallback-radio.rainbow {
+          color: #ff0000;
+          animation: atlas-rainbow 4s linear infinite;
         }
 
         @keyframes atlas-rainbow {
@@ -488,144 +418,193 @@ class AtlasCubeRadioCard extends HTMLElement {
           100% { filter: hue-rotate(360deg) drop-shadow(0 0 4px rgba(255,0,0,.8)); }
         }
 
-        @keyframes atlas-status-pulse {
-          0%, 100% { transform: scale(1); filter: drop-shadow(0 0 1px rgba(76,175,80,.2)); }
-          50% { transform: scale(1.12); filter: drop-shadow(0 0 6px rgba(76,175,80,.7)); }
+        .artist {
+          margin-top: 16px;
+          font-size: 16px;
+          opacity: .78;
+          text-align: center;
         }
+
+        .title {
+          margin-top: 5px;
+          font-size: 23px;
+          font-weight: 600;
+          text-align: center;
+          line-height: 1.2;
+        }
+
+        .album {
+          margin-top: 8px;
+          font-size: 14px;
+          opacity: .68;
+          text-align: center;
+        }
+
+        .controls {
+          margin-top: 18px;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          gap: 10px;
+        }
+
+        button {
+          font: inherit;
+          color: inherit;
+          cursor: pointer;
+          border: 1px solid rgba(255,255,255,.10);
+          outline: none;
+          -webkit-tap-highlight-color: transparent;
+        }
+
+        .skip {
+          width: 52px;
+          height: 52px;
+          flex: 0 0 52px;
+          border-radius: 18px;
+          background: rgba(255,255,255,.06);
+          display: grid;
+          place-items: center;
+          backdrop-filter: blur(6px);
+        }
+
+        .skip ha-icon {
+          --mdc-icon-size: 25px;
+          color: rgba(255,255,255,.78);
+        }
+
+        .main {
+          width: 60px;
+          height: 60px;
+          flex: 0 0 60px;
+          border-radius: 50%;
+          background: rgba(255,255,255,.10);
+          border-color: rgba(255,255,255,.16);
+          display: grid;
+          place-items: center;
+          backdrop-filter: blur(6px);
+          box-shadow: 0 5px 18px rgba(0,0,0,.22);
+        }
+
+        .main.playing {
+          background: rgba(33,150,243,.22);
+          border-color: rgba(33,150,243,.50);
+          box-shadow: 0 0 20px rgba(33,150,243,.25);
+        }
+
+        .main ha-icon {
+          --mdc-icon-size: 29px;
+        }
+
+        .main.playing ha-icon { color: #2196f3; }
+        .main.stopped ha-icon { color: rgba(255,255,255,.92); }
+
+        .volume {
+          width: min(360px, 90%);
+          margin-top: 14px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .volume ha-icon {
+          --mdc-icon-size: 22px;
+          opacity: .75;
+        }
+
+        .volume input {
+          flex: 1;
+          min-width: 0;
+          accent-color: #2196f3;
+        }
+
+        .volume-value {
+          min-width: 38px;
+          text-align: right;
+          font-size: 12px;
+          opacity: .65;
+        }
+
+        .source { width:min(360px,90%); margin-top:12px; display:flex; align-items:center; gap:10px; }
+        .source ha-icon { --mdc-icon-size:22px; opacity:.75; }
+        .source select { flex:1; min-width:0; height:36px; padding:0 10px; border:1px solid rgba(255,255,255,.12); border-radius:10px; background:rgba(0,0,0,.18); color:inherit; font:inherit; outline:none; }
       </style>
 
-      <ha-card class="card ${playing ? "playing" : ""} ${!online ? "offline" : ""}">
-        <div class="test-badge">v0.3 MQTT TEST</div>
+      <div class="card ${!online ? "offline" : artworkEnabled && playing && artwork ? "has-art" : !artworkEnabled && playing ? "playing-noart" : ""}">
+        ${background}
 
-        <div class="header ${webUrl ? "web" : ""}" id="header" title="${webUrl ? "Otwórz panel AtlasCube" : ""}">
-          <ha-icon
-            class="radio-icon ${playing && online ? "rainbow" : online ? "idle" : "offline"}"
-            icon="mdi:radio">
-          </ha-icon>
+        <div class="content">
+          <div class="brand ${webUrl ? "web" : ""}" id="brand" title="${webUrl ? "Otwórz panel AtlasCube" : ""}"><span class="brand-icon">◈</span><span>ATLAS <span class="brand-cube">CUBE</span></span></div>
+          ${!online ? `<div class="offline-icon"><ha-icon icon="mdi:wifi-off"></ha-icon></div><div class="offline-title">Radio AtlasCube</div><div class="offline-text">niedostępne w sieci</div>` : artworkEnabled && playing ? `${station && station !== "unknown" && station !== "unavailable" ? `<div class="station">${this._escape(station)}</div>` : ""}${image}<div class="artist">${this._escape(artist || "Nieznany wykonawca")}</div><div class="title">${this._escape(title)}</div>${album ? `<div class="album">${this._escape(album)}</div>` : ""}` : !artworkEnabled ? `${station && station !== "unknown" && station !== "unavailable" ? `<div class="station">${this._escape(station)}</div>` : ""}${image}` : ""}
 
-          <div class="texts">
-            <div class="station">${this._escape(station)}</div>
-            <div class="title">${this._escape(title)}</div>
-          </div>
-
-          <ha-icon
-            class="status ${status.playing ? "playing" : ""}"
-            style="color:${status.color}"
-            icon="${status.icon}">
-          </ha-icon>
-        </div>
-
-        ${this._config.show_source ? `
-          <div class="source">
-            <ha-icon icon="mdi:audio-input-stereo-minijack"></ha-icon>
-            <select id="source">
-              ${this._sourceOptions(source)}
-            </select>
-          </div>
-        ` : ""}
-
-        <div class="controls">
-          <button class="skip" id="previous" aria-label="Poprzednia stacja">
-            <ha-icon icon="mdi:skip-previous"></ha-icon>
-          </button>
-
-          <button class="main ${playing ? "playing" : "stopped"}" id="playstop" aria-label="${playing ? "Stop" : "Play"}">
-            <ha-icon icon="mdi:${playing ? "stop" : "play"}"></ha-icon>
-          </button>
-
-          <button class="skip" id="next" aria-label="Następna stacja">
-            <ha-icon icon="mdi:skip-next"></ha-icon>
-          </button>
-        </div>
-
-        ${this._config.show_volume ? `
-          <div class="volume">
-            <button id="mute" aria-label="Wycisz">
-              <ha-icon icon="mdi:${volume === 0 ? "volume-mute" : "volume-high"}"
-                style="color:${volume === 0 ? "#f44336" : "rgba(255,255,255,.65)"}">
-              </ha-icon>
+          ${online ? `<div class="controls">
+            <button class="skip" id="previous" aria-label="Poprzednia stacja">
+              <ha-icon icon="mdi:skip-previous"></ha-icon>
             </button>
-            <input id="volume" type="range" min="0" max="100" step="1" value="${volume}">
-          </div>
-        ` : ""}
-      </ha-card>
+
+            <button class="main ${playing ? "playing" : "stopped"}" id="playstop" aria-label="${playing ? "Stop" : "Play"}">
+              <ha-icon icon="mdi:${playing ? "stop" : "play"}"></ha-icon>
+            </button>
+
+            <button class="skip" id="next" aria-label="Następna stacja">
+              <ha-icon icon="mdi:skip-next"></ha-icon>
+            </button>
+          </div>` : ""}
+
+          ${online && this._config.show_volume !== false ? `<div class="volume">
+            <ha-icon icon="mdi:${volumeValue === 0 ? "volume-mute" : volumeValue < 50 ? "volume-medium" : "volume-high"}"></ha-icon>
+            <input id="volume" type="range" min="0" max="100" step="1" value="${volumeValue}" aria-label="Głośność">
+            <div class="volume-value">${Math.round(volumeValue)}%</div>
+          </div>` : ""}
+
+          ${online && this._config.show_source !== false && sourceOptions.length ? `<div class="source"><ha-icon icon="mdi:radio-tower"></ha-icon><select id="source" aria-label="Źródło">${sourceOptions.map(option => `<option value="${this._escape(option)}" ${option === sourceValue ? "selected" : ""}>${this._escape(option)}</option>`).join("")}</select></div>` : ""}
+        </div>
+      </div>
     `;
 
-    this._wire();
-  }
-
-  _sourceOptions(current) {
-    const entity = this._state(this._config.radio.source);
-    const options = entity?.attributes?.options || [];
-
-    if (!options.length) {
-      return `<option selected>${this._escape(current)}</option>`;
-    }
-
-    return options.map(option => `
-      <option value="${this._escapeAttr(option)}" ${String(option) === String(current) ? "selected" : ""}>
-        ${this._escape(option)}
-      </option>
-    `).join("");
-  }
-
-  _wire() {
-    const root = this.shadowRoot;
-    if (!root) return;
-
-    const webUrl = this._webUrl();
-    root.querySelector("#header")?.addEventListener("click", () => {
+    this.shadowRoot.querySelector("#brand")?.addEventListener("click", () => {
       if (webUrl) window.open(webUrl, "_blank", "noopener,noreferrer");
     });
 
-    root.querySelector("#previous")?.addEventListener("click", () =>
-      this._press(this._config.radio.previous)
+    this.shadowRoot.querySelector("#previous")?.addEventListener("click", () =>
+      this._press(r.previous)
     );
 
-    root.querySelector("#next")?.addEventListener("click", () =>
-      this._press(this._config.radio.next)
+    this.shadowRoot.querySelector("#next")?.addEventListener("click", () =>
+      this._press(r.next)
     );
 
-    root.querySelector("#playstop")?.addEventListener("click", () =>
+    this.shadowRoot.querySelector("#playstop")?.addEventListener("click", () =>
       this._press(
-        this._playing()
-          ? this._config.radio.stop
-          : this._config.radio.play
+        playing
+          ? r.stop
+          : r.play
       )
     );
 
-    root.querySelector("#mute")?.addEventListener("click", () =>
-      this._setVolume(0)
-    );
+    this.shadowRoot.querySelector("#volume")?.addEventListener("input", event => {
+      const value = Number(event.target.value);
+      const label = this.shadowRoot.querySelector(".volume-value");
+      if (label) label.textContent = `${Math.round(value)}%`;
+    });
 
-    root.querySelector("#volume")?.addEventListener("change", event =>
-      this._setVolume(Number(event.target.value))
-    );
-
-    root.querySelector("#source")?.addEventListener("change", async event => {
+    this.shadowRoot.querySelector("#volume")?.addEventListener("change", async event => {
       if (!this._hass) return;
+      await this._hass.callService("number", "set_value", {
+        entity_id: r.volume,
+        value: Number(event.target.value)
+      });
+    });
 
+    this.shadowRoot.querySelector("#source")?.addEventListener("change", async event => {
+      if (!this._hass) return;
       await this._hass.callService("select", "select_option", {
-        entity_id: this._config.radio.source,
+        entity_id: r.source,
         option: event.target.value
       });
     });
   }
-
-  _escape(value) {
-    return String(value)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-
-  _escapeAttr(value) {
-    return this._escape(value);
-  }
 }
-
 
 
 class AtlasCubeRadioCardEditor extends HTMLElement {
@@ -633,7 +612,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._hass = null;
-    this._config = { show_source: true, show_volume: true, radio: {} };
+    this._config = { show_artwork: true, show_source: true, show_volume: true, radio: {} };
     this._autoDetected = false;
     this._deviceRegistry = null;
     this._entityRegistry = null;
@@ -641,6 +620,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
 
   setConfig(config) {
     this._config = {
+      show_artwork: true,
       show_source: true,
       show_volume: true,
       ...config,
@@ -923,7 +903,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
       </style>
 
       <div class="box">
-        <div class="badge">v0.3 MQTT TEST</div>
+        <div class="badge">v0.4</div>
         <h2>AtlasCube Radio</h2>
         <p>Karta wykrywa AtlasCube i korzysta z natywnej dostępności MQTT przez stany jego encji.</p>
 
@@ -941,6 +921,10 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
         ${this._field("availability", "Dostępność — tylko ręczny override")}
 
         <div class="checks">
+          <label>
+            <input type="checkbox" id="show_artwork" ${this._config.show_artwork !== false ? "checked" : ""}>
+            <span>Okładki utworów</span>
+          </label>
           <label>
             <input type="checkbox" id="show_source" ${this._config.show_source !== false ? "checked" : ""}>
             <span>Pokaż źródło</span>
@@ -966,6 +950,11 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
         this._set(e.target.dataset.role, e.target.value);
         this._render();
       });
+    });
+
+    this.shadowRoot.querySelector("#show_artwork")?.addEventListener("change", e => {
+      this._config.show_artwork = e.target.checked;
+      this._fire();
     });
 
     this.shadowRoot.querySelector("#show_source")?.addEventListener("change", e => {
