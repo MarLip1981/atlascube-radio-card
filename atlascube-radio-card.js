@@ -12,17 +12,12 @@ class AtlasCubeRadioCard extends HTMLElement {
     this._deviceRegistry = null;
     this._entityRegistry = null;
     this._registryLoading = false;
-    this._artCache = new Map();
-    this._artRequestId = 0;
-    this._lastTrackForArtwork = "";
-    this._artData = null;
   }
 
   setConfig(config) {
     this._config = {
       show_source: true,
       show_volume: true,
-      show_artwork: false,
       ...config,
       radio: { ...(config?.radio || {}) }
     };
@@ -38,7 +33,6 @@ class AtlasCubeRadioCard extends HTMLElement {
     return {
       show_source: true,
       show_volume: true,
-      show_artwork: false,
       radio: {}
     };
   }
@@ -53,12 +47,6 @@ class AtlasCubeRadioCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-
-    const track = this._value(this._config?.radio?.title, "");
-    if (track !== this._lastTrackForArtwork) {
-      this._lastTrackForArtwork = track;
-      this._loadArtwork(track);
-    }
 
     if (!this._registryLoading && (!this._deviceRegistry || !this._entityRegistry)) {
       this._loadRegistries().then(() => this._render());
@@ -88,7 +76,6 @@ class AtlasCubeRadioCard extends HTMLElement {
   }
 
   getCardSize() {
-    if (this._config?.show_artwork) return 9;
     return this._config?.show_source === false ? 4 : 5;
   }
 
@@ -184,103 +171,6 @@ class AtlasCubeRadioCard extends HTMLElement {
     return `<ha-icon icon="${name}"></ha-icon>`;
   }
 
-  _parseTrack(value) {
-    const text = String(value || "").trim();
-    const match = text.match(/^(.+?)\s+-\s+(.+)$/);
-    if (!match) return { artist: "", title: text };
-    return { artist: match[1].trim(), title: match[2].trim() };
-  }
-
-  _normalize(value) {
-    return String(value || "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim();
-  }
-
-  _scoreArtworkResult(result, artist, title) {
-    const wantedArtist = this._normalize(artist);
-    const wantedTitle = this._normalize(title);
-    const resultArtist = this._normalize(result.artistName);
-    const resultTitle = this._normalize(result.trackName);
-    let score = 0;
-
-    if (resultArtist === wantedArtist) score += 100;
-    else if (resultArtist.includes(wantedArtist) || wantedArtist.includes(resultArtist)) score += 40;
-
-    if (resultTitle === wantedTitle) score += 100;
-    else if (resultTitle.includes(wantedTitle) || wantedTitle.includes(resultTitle)) score += 40;
-
-    return score;
-  }
-
-  async _loadArtwork(rawTrack) {
-    const { artist, title } = this._parseTrack(rawTrack);
-    const requestId = ++this._artRequestId;
-
-    this._artData = { artist, title, artwork: null, album: "" };
-    this._render();
-
-    if (!rawTrack || !title) return;
-
-    const cacheKey = this._normalize(rawTrack);
-
-    if (this._artCache.has(cacheKey)) {
-      this._artData = {
-        artist,
-        title,
-        ...this._artCache.get(cacheKey)
-      };
-      this._render();
-      return;
-    }
-
-    try {
-      const query = encodeURIComponent(artist + " " + title);
-      const url = `https://itunes.apple.com/search?term=${query}&country=PL&media=music&entity=song&limit=10`;
-
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const data = await response.json();
-      if (requestId !== this._artRequestId) return;
-
-      const results = Array.isArray(data.results) ? data.results : [];
-      let best = null;
-      let bestScore = -1;
-
-      for (const result of results) {
-        const score = this._scoreArtworkResult(result, artist, title);
-        if (score > bestScore) {
-          bestScore = score;
-          best = result;
-        }
-      }
-
-      const artwork = best?.artworkUrl100
-        ? best.artworkUrl100
-            .replace(/100x100bb\./i, "600x600bb.")
-            .replace(/^http:/i, "https:")
-        : null;
-
-      const result = {
-        artwork,
-        album: best?.collectionName || "",
-        matchScore: bestScore
-      };
-
-      this._artCache.set(cacheKey, result);
-      this._artData = { artist, title, ...result };
-      this._render();
-    } catch (err) {
-      if (requestId !== this._artRequestId) return;
-      this._artData = { artist, title, artwork: null, album: "" };
-      this._render();
-    }
-  }
-
   _render() {
     if (!this._config || !this._hass) return;
 
@@ -320,24 +210,6 @@ class AtlasCubeRadioCard extends HTMLElement {
     const title = titleState && titleState !== "unknown" && titleState !== "unavailable"
       ? titleState
       : "Brak informacji o utworze";
-
-    const artwork = this._artData?.artwork || "";
-    const artArtist = this._artData?.artist || "";
-    const artTitle = this._artData?.title || title;
-    const album = this._artData?.album || "";
-
-    const background = artwork
-      ? `
-        <img class="blur-bg-image" src="${artwork}" alt="" aria-hidden="true">
-        <div class="art-shade"></div>
-      `
-      : `
-        <div class="art-fallback-bg"></div>
-      `;
-
-    const cover = artwork
-      ? `<img class="cover" src="${artwork}" alt="Okładka">`
-      : `<div class="cover no-cover"><ha-icon class="fallback-radio ${playing ? "rainbow" : "idle"}" icon="mdi:radio"></ha-icon></div>`;
 
     const status = this._status();
     const volume = Number(this._value(r.volume, 0)) || 0;
@@ -386,123 +258,19 @@ class AtlasCubeRadioCard extends HTMLElement {
           opacity: .55;
         }
 
-
-        .art-area {
-          position: relative;
-          min-height: 405px;
-          margin: -10px -10px 8px;
-          overflow: hidden;
-          border-radius: 24px 24px 18px 18px;
-          border-bottom: 1px solid rgba(255,255,255,.08);
-        }
-
-        .blur-bg-image,
-        .art-shade,
-        .art-fallback-bg {
-          position: absolute;
-          inset: 0;
-          width: 100%;
-          height: 100%;
-        }
-
-        .blur-bg-image {
-          display: block;
-          object-fit: cover;
-          object-position: center;
-          filter: blur(24px);
-          transform: scale(1.0);
-          opacity: .82;
-          z-index: 0;
-        }
-
-        .art-shade {
-          z-index: 1;
-          background: linear-gradient(
-            180deg,
-            rgba(0,0,0,.18),
-            rgba(0,0,0,.58)
-          );
-        }
-
-        .art-fallback-bg {
-          z-index: 0;
-          background: radial-gradient(
-            circle at 50% 42%,
-            rgba(33,150,243,.18) 0%,
-            rgba(33,150,243,.06) 38%,
-            rgba(0,0,0,.18) 100%
-          );
-        }
-
-        .art-content {
-          position: relative;
-          z-index: 2;
-          min-height: 405px;
-          padding: 18px 14px 20px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-        }
-
-        .art-station {
-          margin-bottom: 12px;
-          font-size: 14px;
-          font-weight: 600;
-          letter-spacing: .04em;
-          opacity: .88;
-          text-align: center;
-        }
-
-        .cover {
-          width: 220px;
-          height: 220px;
-          border-radius: 14px;
-          object-fit: cover;
-          box-shadow: 0 8px 30px rgba(0,0,0,.45);
-          background: rgba(0,0,0,.25);
-        }
-
-        .no-cover {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .fallback-radio {
-          --mdc-icon-size: 92px;
-          width: 92px;
-          height: 92px;
-        }
-
-        .fallback-radio.idle {
-          color: rgba(255,255,255,.55);
-        }
-
-        .fallback-radio.rainbow {
-          color: #ff0000;
-          animation: atlas-rainbow 4s linear infinite;
-        }
-
-        .art-artist {
-          margin-top: 18px;
-          font-size: 16px;
-          opacity: .82;
-          text-align: center;
-        }
-
-        .art-title {
-          margin-top: 5px;
-          font-size: 23px;
-          font-weight: 600;
-          line-height: 1.2;
-          text-align: center;
-        }
-
-        .art-album {
-          margin-top: 8px;
-          font-size: 14px;
-          opacity: .68;
-          text-align: center;
+        .test-badge {
+          display:inline-flex;
+          align-items:center;
+          min-height:22px;
+          margin:0 8px 2px;
+          padding:3px 8px;
+          border-radius:8px;
+          background:rgba(255,193,7,.12);
+          border:1px solid rgba(255,193,7,.25);
+          color:#ffc107;
+          font-size:9px;
+          font-weight:700;
+          letter-spacing:.7px;
         }
 
         .header {
@@ -727,18 +495,7 @@ class AtlasCubeRadioCard extends HTMLElement {
       </style>
 
       <ha-card class="card ${playing ? "playing" : ""} ${!online ? "offline" : ""}">
-        ${this._config.show_artwork ? `
-          <div class="art-area">
-            ${background}
-            <div class="art-content">
-              <div class="art-station">${this._escape(station)}</div>
-              ${cover}
-              <div class="art-artist">${this._escape(artArtist || (titleState ? this._parseTrack(titleState).artist : "") || "Nieznany wykonawca")}</div>
-              <div class="art-title">${this._escape(artTitle)}</div>
-              ${album ? `<div class="art-album">${this._escape(album)}</div>` : ""}
-            </div>
-          </div>
-        ` : ""}
+        <div class="test-badge">v0.3 MQTT TEST</div>
 
         <div class="header ${webUrl ? "web" : ""}" id="header" title="${webUrl ? "Otwórz panel AtlasCube" : ""}">
           <ha-icon
@@ -876,7 +633,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._hass = null;
-    this._config = { show_source: true, show_volume: true, show_artwork: false, radio: {} };
+    this._config = { show_source: true, show_volume: true, radio: {} };
     this._autoDetected = false;
     this._deviceRegistry = null;
     this._entityRegistry = null;
@@ -886,7 +643,6 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
     this._config = {
       show_source: true,
       show_volume: true,
-      show_artwork: false,
       ...config,
       radio: { ...(config?.radio || {}) }
     };
@@ -1106,6 +862,17 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
         }
         h2 { margin:0 0 4px; font-size:18px; }
         p { margin:0 0 16px; opacity:.65; font-size:13px; }
+        .badge {
+          display:inline-block;
+          padding:3px 7px;
+          border-radius:6px;
+          background:rgba(255,193,7,.14);
+          color:#c78a00;
+          font-size:10px;
+          font-weight:700;
+          letter-spacing:.5px;
+          margin-bottom:12px;
+        }
         .auto {
           width:100%;
           min-height:42px;
@@ -1136,7 +903,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
         }
         .checks {
           display:grid;
-          grid-template-columns:1fr 1fr 1fr;
+          grid-template-columns:1fr 1fr;
           gap:10px;
           margin-top:4px;
         }
@@ -1156,6 +923,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
       </style>
 
       <div class="box">
+        <div class="badge">v0.3 MQTT TEST</div>
         <h2>AtlasCube Radio</h2>
         <p>Karta wykrywa AtlasCube i korzysta z natywnej dostępności MQTT przez stany jego encji.</p>
 
@@ -1173,10 +941,6 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
         ${this._field("availability", "Dostępność — tylko ręczny override")}
 
         <div class="checks">
-          <label>
-            <input type="checkbox" id="show_artwork" ${this._config.show_artwork === true ? "checked" : ""}>
-            <span>Okładka utworu</span>
-          </label>
           <label>
             <input type="checkbox" id="show_source" ${this._config.show_source !== false ? "checked" : ""}>
             <span>Pokaż źródło</span>
@@ -1202,12 +966,6 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
         this._set(e.target.dataset.role, e.target.value);
         this._render();
       });
-    });
-
-    this.shadowRoot.querySelector("#show_artwork")?.addEventListener("change", e => {
-      this._config.show_artwork = e.target.checked;
-      this._fire();
-      this._render();
     });
 
     this.shadowRoot.querySelector("#show_source")?.addEventListener("change", e => {

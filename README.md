@@ -2,9 +2,9 @@
 
 A compact, modern Home Assistant Lovelace card for AtlasCube radio devices.
 
-> **Current status: public test release**
+> **Current status: v0.3 TEST**
 >
-> The card is currently being tested before the first stable release. It supports two display modes: the original minimalist radio card and an optional track artwork mode with a dynamic background.
+> The card is currently in public testing and is being prepared for publication as a HACS Dashboard element. The configuration and UI may still change before the first stable release.
 
 ---
 
@@ -27,12 +27,6 @@ A compact, modern Home Assistant Lovelace card for AtlasCube radio devices.
 - Does not require a separate ping sensor
 - Optional manual availability override
 - Optional source and volume sections
-- Optional **Track Artwork** mode
-- Dynamic album artwork, artist, title and album information
-- Dynamic blurred background based on the current track artwork
-- Artwork lookup using the iTunes Search API
-- Cached artwork results to avoid repeated lookups
-- Radio icon fallback when artwork is unavailable
 
 ### Requirements
 
@@ -102,30 +96,6 @@ The address is obtained automatically from the AtlasCube device `configuration_u
 
 You do not need to enter the device IP address manually.
 
-### Track artwork mode
-
-The card has an optional **Track Artwork** switch in the visual card editor. It is disabled by default so existing configurations keep the original minimalist appearance.
-
-**Off — minimalist mode**
-
-- Uses the original compact card layout.
-- Keeps the existing radio/playback indicator.
-- Keeps Previous / Play-Stop / Next controls.
-- Keeps the source selector and volume controls when enabled.
-- Does not display the album-art section.
-
-**On — artwork mode**
-
-- Displays the station name above the artwork.
-- Searches for artwork using the current track title.
-- Shows the album cover when a match is found.
-- Uses the cover as a blurred, darkened dynamic background.
-- Shows artist, track title and album when available.
-- Uses the AtlasCube radio icon as the fallback when artwork cannot be found.
-- Keeps all existing playback controls, volume and source controls.
-
-Artwork lookup uses the public iTunes Search API. The card does not require an additional Home Assistant integration, sensor or API key. Results are cached during the current card session.
-
 ### Manual YAML configuration
 
     type: custom:atlascube-radio-card
@@ -144,12 +114,6 @@ Artwork lookup uses the public iTunes Search API. The card does not require an a
 
     show_source: true
     show_volume: true
-    show_artwork: false
-
-    # show_artwork: true włącza tryb z dynamicznym tłem i okładką
-    show_artwork: false
-
-    # show_artwork: true enables the dynamic artwork/background mode
 
 ### Status indicators
 
@@ -179,13 +143,6 @@ Download `atlascube-radio-card.js` from this repository and add it as a Lovelace
 - Dynamiczny stan online/offline
 - Tęczowa animacja radia podczas odtwarzania
 - Ikona Wi-Fi-off, gdy AtlasCube jest niedostępny
-- Opcjonalny tryb **Okładka utworu**
-- Dynamiczne wyszukiwanie okładki aktualnego utworu
-- Rozmyte, przyciemnione tło oparte na znalezionej okładce
-- Wyświetlanie stacji, wykonawcy, tytułu i albumu
-- Ikona radia jako zastępstwo, gdy okładka nie zostanie znaleziona
-- Wyszukiwanie okładek przez publiczne iTunes Search API, bez klucza API
-- Buforowanie znalezionych okładek podczas działania karty
 - Automatyczne otwieranie panelu WWW AtlasCube na podstawie `configuration_url` urządzenia Home Assistant
 - Wykorzystanie natywnej dostępności MQTT obsługiwanej przez Home Assistant
 - Brak potrzeby tworzenia osobnego sensora ping
@@ -256,30 +213,6 @@ Adres jest pobierany automatycznie z `configuration_url` urządzenia Home Assist
 
 Nie trzeba wpisywać adresu IP ręcznie.
 
-### Tryb „Okładka utworu”
-
-W edytorze wizualnym karty dostępny jest przełącznik **Okładka utworu**. Jest domyślnie wyłączony, dzięki czemu dotychczasowe konfiguracje zachowują minimalistyczny wygląd.
-
-**Wyłączony — karta minimalistyczna**
-
-- Oryginalny, kompaktowy wygląd karty.
-- Dotychczasowy wskaźnik radia / nutki.
-- Przyciski Poprzednia / Play-Stop / Następna.
-- Wybór źródła i regulacja głośności.
-- Brak sekcji okładki i dynamicznego tła.
-
-**Włączony — karta z okładką**
-
-- Nazwa stacji nad okładką.
-- Automatyczne wyszukiwanie okładki na podstawie aktualnego utworu.
-- Okładka albumu wyświetlana centralnie.
-- Dynamiczne, rozmyte i przyciemnione tło z kolorów okładki.
-- Wykonawca, tytuł i album, jeśli są dostępne.
-- Ikona radia jako fallback, gdy nie uda się znaleźć okładki.
-- Wszystkie dotychczasowe przyciski, głośność i wybór źródła pozostają dostępne.
-
-Wyszukiwanie wykorzystuje publiczne iTunes Search API. Nie wymaga dodatkowej integracji Home Assistant ani klucza API.
-
 ### Konfiguracja YAML
 
     type: custom:atlascube-radio-card
@@ -335,16 +268,13 @@ Pobierz `atlascube-radio-card.js` z tego repozytorium i dodaj go jako zasób Jav
 
 This version is intentionally still marked as a test release.
 
-The current public test focuses on:
+The current v0.3 test focuses on:
 
 - AtlasCube auto-discovery
 - native MQTT-derived availability
 - automatic web interface discovery
 - online/offline card behavior
-- stable radio controls
-- optional track artwork mode
-- dynamic artwork background and metadata
-- preserving the original minimalist mode when artwork is disabled
+- stable basic radio controls
 
 Brightness, LED ring, SD card and URL playback controls are intentionally not exposed by default.
 
@@ -360,9 +290,9 @@ Brightness, LED ring, SD card and URL playback controls are intentionally not ex
 - [ ] GitHub repository description
 - [ ] GitHub repository topics
 - [ ] Verify GitHub Issues are enabled
-- [x] Create the first GitHub Release
-- [x] Run and pass HACS validation
-- [x] Submit repository to the HACS default `plugin` list
+- [ ] Create the first GitHub Release
+- [ ] Run and pass HACS validation
+- [ ] Submit repository to the HACS default `plugin` list
 
 For publication in the default HACS repository list, the repository must pass HACS validation and have the required repository metadata. Plugin repositories also need images in the README.
 
