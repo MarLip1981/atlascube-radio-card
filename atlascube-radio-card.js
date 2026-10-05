@@ -1,4 +1,8 @@
 class AtlasCubeRadioCard extends HTMLElement {
+  static getConfigElement() {
+    return document.createElement("atlascube-radio-card-editor");
+  }
+
   static getStubConfig() {
     return {
       show_artwork: true,
