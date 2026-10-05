@@ -55,24 +55,18 @@ class AtlasCubeRadioCard extends HTMLElement {
       this._deviceRegistry = devices || [];
       this._entityRegistry = entities || [];
     } catch (err) {
-      console.warn("AtlasCube Album Art Test: nie udało się pobrać rejestru urządzeń.", err);
+      console.warn("AtlasCube Radio Card: nie udało się pobrać rejestru urządzeń.", err);
     } finally {
       this._registryLoading = false;
     }
   }
 
   _webUrl() {
+    const r = this._config?.radio || {};
     const entityIds = [
-      this._config.radio.title,
-      "sensor.atlascube_radio_stacja_radiowa",
-      "sensor.atlascube_9140_playback",
-      "number.salon_atlascube_radio_glosnosc",
-      "select.atlascube_9140_source",
-      "button.atlascube_9140_previous",
-      "button.atlascube_9140_play",
-      "button.atlascube_9140_stop",
-      "button.atlascube_9140_next"
-    ];
+      r.station, r.title, r.playback, r.volume, r.source,
+      r.previous, r.play, r.stop, r.next
+    ].filter(Boolean);
 
     for (const entityId of entityIds) {
       const entity = (this._entityRegistry || []).find(item => item.entity_id === entityId);
@@ -291,13 +285,15 @@ class AtlasCubeRadioCard extends HTMLElement {
         <img class="blur-bg-image" src="${artwork}" alt="" aria-hidden="true">
         <div class="shade"></div>
       `
-      : `<div class="fallback-bg"></div>`;
+      : "";
 
     const image = artworkEnabled && online && playing
       ? (artwork
         ? `<img class="cover" src="${artwork}" alt="Okładka">`
         : `<div class="no-cover"><ha-icon class="fallback-radio rainbow" icon="mdi:radio"></ha-icon></div>`)
-      : "";
+      : !artworkEnabled && online && playing
+        ? `<div class="no-cover"><ha-icon class="fallback-radio rainbow" icon="mdi:radio"></ha-icon></div>`
+        : "";
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -354,7 +350,7 @@ class AtlasCubeRadioCard extends HTMLElement {
         .content {
           position: relative;
           z-index: 1;
-          min-height: 464px;
+          min-height: 0;
           display: flex;
           flex-direction: column;
           align-items: center;
