@@ -8,13 +8,17 @@ class AtlasCubeRadioCard extends HTMLElement {
     this._entityRegistry = null;
     this._registryLoading = false;
     this._cache = new Map();
+    this._stationLogoCache = new Map();
     this._requestId = 0;
+    this._stationLogoRequestId = 0;
     this._lastTrack = "";
+    this._lastStation = "";
   }
 
   setConfig(config) {
     this._config = {
       show_artwork: true,
+      show_station_logo: true,
       show_source: true,
       show_volume: true,
       ...config,
@@ -33,6 +37,7 @@ class AtlasCubeRadioCard extends HTMLElement {
   static getStubConfig() {
     return {
       show_artwork: true,
+      show_station_logo: true,
       show_source: true,
       show_volume: true,
       radio: {}
@@ -46,6 +51,12 @@ class AtlasCubeRadioCard extends HTMLElement {
     if (track !== this._lastTrack) {
       this._lastTrack = track;
       if (this._config.show_artwork !== false) this._loadArtwork();
+    }
+
+    const station = this._getStation();
+    if (station !== this._lastStation) {
+      this._lastStation = station;
+      if (this._config.show_station_logo !== false) this._loadStationLogo();
     }
     this._render();
   }
@@ -96,6 +107,14 @@ class AtlasCubeRadioCard extends HTMLElement {
       : "";
   }
 
+  _getStation() {
+    const stateObj = this._hass?.states?.[this._config.radio.station];
+    const value = stateObj?.state;
+    return value && value !== "unknown" && value !== "unavailable"
+      ? String(value).trim()
+      : "";
+  }
+
   _parseTrack(value) {
     const text = String(value || "").trim();
     const match = text.match(/^(.+?)\s+-\s+(.+)$/);
@@ -139,6 +158,39 @@ class AtlasCubeRadioCard extends HTMLElement {
     }
 
     return score;
+  }
+
+  async _loadStationLogo() {
+    const station = this._getStation();
+    const requestId = ++this._stationLogoRequestId;
+    if (!station) { this._stationLogo = null; this._render(); return; }
+    const cacheKey = this._normalize(station);
+    if (this._stationLogoCache.has(cacheKey)) { this._stationLogo = this._stationLogoCache.get(cacheKey); this._render(); return; }
+    try {
+      const url = "https://de1.api.radio-browser.info/json/stations/byname/" + encodeURIComponent(station) + "?limit=10";
+      const response = await fetch(url, { headers: { "Accept": "application/json" } });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const data = await response.json();
+      if (requestId !== this._stationLogoRequestId) return;
+      const wanted = this._normalize(station);
+      let best = null; let bestScore = -1;
+      for (const result of (Array.isArray(data) ? data : [])) {
+        const name = this._normalize(result?.name);
+        if (!name || !result?.favicon) continue;
+        let score = 0;
+        if (name === wanted) score += 100;
+        else if (name.includes(wanted) || wanted.includes(name)) score += 60;
+        if (String(result?.countrycode || "").toUpperCase() === "PL") score += 20;
+        if (Number(result?.votes) > 0) score += Math.min(10, Number(result.votes) / 100);
+        if (score > bestScore) { bestScore = score; best = result; }
+      }
+      const result = { logo: best?.favicon ? String(best.favicon).replace(/^http:/i, "https:") : null, station: best?.name || "", matchScore: bestScore };
+      this._stationLogoCache.set(cacheKey, result); this._stationLogo = result; this._render();
+    } catch (error) {
+      if (requestId !== this._stationLogoRequestId) return;
+      const result = { logo: null, station: "", matchScore: -1, error: error?.message || "Nieznany błąd" };
+      this._stationLogoCache.set(cacheKey, result); this._stationLogo = result; this._render();
+    }
   }
 
   async _loadArtwork() {
@@ -275,6 +327,8 @@ class AtlasCubeRadioCard extends HTMLElement {
     const r = this._config?.radio || {};
     const online = this._online();
     const station = this._hass?.states?.[r.station]?.state || "AtlasCube";
+    const stationLogo = this._stationLogo?.logo || "";
+    const stationLogoEnabled = this._config.show_station_logo !== false;
     const artist = data.artist || "";
     const title = data.title || "Brak informacji o utworze";
     const album = data.album || "";
@@ -384,6 +438,17 @@ class AtlasCubeRadioCard extends HTMLElement {
           letter-spacing: .04em;
           opacity: .82;
           text-align: center;
+        }
+
+        .station-logo {
+          display:block;
+          max-width:140px;
+          max-height:58px;
+          width:auto;
+          height:auto;
+          object-fit:contain;
+          margin:0 auto 12px;
+          filter:drop-shadow(0 4px 12px rgba(0,0,0,.30));
         }
 
         .cover,
@@ -541,7 +606,7 @@ class AtlasCubeRadioCard extends HTMLElement {
 
         <div class="content">
           <div class="brand ${webUrl ? "web" : ""}" id="brand" title="${webUrl ? "Otwórz panel AtlasCube" : ""}"><span class="brand-icon">◈</span><span>ATLAS <span class="brand-cube">CUBE</span></span></div>
-          ${!online ? `<div class="offline-icon"><ha-icon icon="mdi:wifi-off"></ha-icon></div><div class="offline-title">Radio AtlasCube</div><div class="offline-text">niedostępne w sieci</div>` : artworkEnabled && playing ? `${station && station !== "unknown" && station !== "unavailable" ? `<div class="station">${this._escape(station)}</div>` : ""}${image}<div class="artist">${this._escape(artist || "Nieznany wykonawca")}</div><div class="title">${this._escape(title)}</div>${album ? `<div class="album">${this._escape(album)}</div>` : ""}` : !artworkEnabled ? `${station && station !== "unknown" && station !== "unavailable" ? `<div class="station">${this._escape(station)}</div>` : ""}${image}` : ""}
+          ${!online ? `<div class="offline-icon"><ha-icon icon="mdi:wifi-off"></ha-icon></div><div class="offline-title">Radio AtlasCube</div><div class="offline-text">niedostępne w sieci</div>` : artworkEnabled && playing ? `${station && station !== "unknown" && station !== "unavailable" ? (stationLogoEnabled && stationLogo ? `<img class="station-logo" src="${stationLogo}" alt="${this._escape(station)}">` : `<div class="station">${this._escape(station)}</div>`) : ""}${image}<div class="artist">${this._escape(artist || "Nieznany wykonawca")}</div><div class="title">${this._escape(title)}</div>${album ? `<div class="album">${this._escape(album)}</div>` : ""}` : !artworkEnabled ? `${station && station !== "unknown" && station !== "unavailable" ? (stationLogoEnabled && stationLogo ? `<img class="station-logo" src="${stationLogo}" alt="${this._escape(station)}">` : `<div class="station">${this._escape(station)}</div>`) : ""}${image}` : ""}
 
           ${online ? `<div class="controls">
             <button class="skip" id="previous" aria-label="Poprzednia stacja">
@@ -932,6 +997,10 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
             <span>Okładki utworów</span>
           </label>
           <label>
+            <input type="checkbox" id="show_station_logo" ${this._config.show_station_logo !== false ? "checked" : ""}>
+            <span>Logo stacji (TEST)</span>
+          </label>
+          <label>
             <input type="checkbox" id="show_source" ${this._config.show_source !== false ? "checked" : ""}>
             <span>Pokaż źródło</span>
           </label>
@@ -960,6 +1029,11 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
 
     this.shadowRoot.querySelector("#show_artwork")?.addEventListener("change", e => {
       this._config.show_artwork = e.target.checked;
+      this._fire();
+    });
+
+    this.shadowRoot.querySelector("#show_station_logo")?.addEventListener("change", e => {
+      this._config.show_station_logo = e.target.checked;
       this._fire();
     });
 
