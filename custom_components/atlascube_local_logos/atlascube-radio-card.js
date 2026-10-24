@@ -1177,11 +1177,9 @@ class AtlasCubeRadioCard extends HTMLElement {
           align-items: center;
         }
 
-        .test-version-banner {
-          width:100%; box-sizing:border-box; margin:0 0 10px; padding:6px 9px;
-          border:2px solid #ff5252; border-radius:8px;
-          background:rgba(255,82,82,.18); color:var(--primary-text-color);
-          font-size:11px; font-weight:800; letter-spacing:.08em; text-align:center;
+        .version-footer {
+          margin-top:8px; width:100%; text-align:center; font-size:9px;
+          line-height:1.2; letter-spacing:.04em; opacity:.48;
         }
         .logo-diagnostics {
           display:none;
@@ -1414,7 +1412,6 @@ class AtlasCubeRadioCard extends HTMLElement {
         ${background}
 
         <div class="content">
-          <div class="test-version-banner">TEST INTEGRACJI · LOKALNE LOGO NA DYSKU HA · v0.1.17</div>
           <div class="logo-diagnostics ${this._logoPickerOpen ? "open" : ""}">
             <div class="logo-diagnostics-heading">PORÓWNANIE WYNIKÓW — STAŁE OZNACZENIA METOD</div><div class="logo-diagnostics-source">Kliknij wynik, aby tymczasowo sprawdzić go jako logo karty.</div>
             <div class="logo-diagnostics-row">
@@ -1453,6 +1450,7 @@ class AtlasCubeRadioCard extends HTMLElement {
           </div>` : ""}
 
           ${online && this._config.show_source !== false && sourceOptions.length ? `<div class="source"><ha-icon icon="mdi:radio-tower"></ha-icon><select id="source" aria-label="Źródło">${sourceOptions.map(option => `<option value="${this._escape(option)}" ${option === sourceValue ? "selected" : ""}>${this._escape(option)}</option>`).join("")}</select></div>` : ""}
+          <div class="version-footer">AtlasCube Radio Card · v0.5.0</div>
         </div>
       </div>
     `;
@@ -1924,8 +1922,8 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
       </style>
 
       <div class="box">
-        <div class="badge">TEST ver0.1.17 — LOGO LOKALNE</div>
-        <h2>AtlasCube Radio — TEST LOGO LOKALNE ver0.1.17</h2>
+        <div class="badge">AtlasCube Radio Card · v0.5.0</div>
+        <h2>AtlasCube Radio Card v0.5.0</h2>
         <p>Karta wykrywa AtlasCube i korzysta z natywnej dostępności MQTT przez stany jego encji.</p>
 
         <button class="auto" id="auto">🔎 Automatycznie wykryj AtlasCube</button>
