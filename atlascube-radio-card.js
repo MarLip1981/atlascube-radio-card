@@ -8,13 +8,22 @@ class AtlasCubeRadioCard extends HTMLElement {
     this._entityRegistry = null;
     this._registryLoading = false;
     this._cache = new Map();
+    this._stationLogoCache = new Map();
     this._requestId = 0;
+    this._stationLogoRequestId = 0;
+    this._stationLogoDiagnostics = [];
+    this._stationLogoDiagnosticsRequestId = 0;
+    this._stationLogoDiagnosticsReadyFor = null;
     this._lastTrack = "";
+    this._lastStation = "";
+    this._lastRenderSignature = "";
+    this._logoPickerOpen = false;
   }
 
   setConfig(config) {
     this._config = {
       show_artwork: true,
+      show_station_logo: true,
       show_source: true,
       show_volume: true,
       ...config,
@@ -23,6 +32,7 @@ class AtlasCubeRadioCard extends HTMLElement {
 
     this._cache = new Map();
     this._requestId = 0;
+    this._lastRenderSignature = "";
     this._render();
   }
 
@@ -33,6 +43,7 @@ class AtlasCubeRadioCard extends HTMLElement {
   static getStubConfig() {
     return {
       show_artwork: true,
+      show_station_logo: true,
       show_source: true,
       show_volume: true,
       radio: {}
@@ -47,7 +58,20 @@ class AtlasCubeRadioCard extends HTMLElement {
       this._lastTrack = track;
       if (this._config.show_artwork !== false) this._loadArtwork();
     }
-    this._render();
+
+    const station = this._getStation();
+    if (station !== this._lastStation) {
+      this._lastStation = station;
+      if (this._config.show_station_logo !== false) {
+        this._loadStationLogo();
+        this._loadStationLogoDiagnostics(station);
+      }
+    }
+    const signature = this._renderStateSignature();
+    if (signature !== this._lastRenderSignature) {
+      this._lastRenderSignature = signature;
+      this._render();
+    }
   }
 
   getCardSize() {
@@ -96,6 +120,41 @@ class AtlasCubeRadioCard extends HTMLElement {
       : "";
   }
 
+  _getStation() {
+    const stateObj = this._hass?.states?.[this._config.radio.station];
+    const value = stateObj?.state;
+    return value && value !== "unknown" && value !== "unavailable"
+      ? String(value).trim()
+      : "";
+  }
+
+  _renderStateSignature() {
+    const r = this._config?.radio || {};
+    const read = entityId => {
+      if (!entityId) return null;
+      const obj = this._hass?.states?.[entityId];
+      if (!obj) return null;
+      return {
+        state: obj.state,
+        options: obj.attributes?.options,
+        min: obj.attributes?.min,
+        max: obj.attributes?.max
+      };
+    };
+    return JSON.stringify({
+      station: read(r.station),
+      title: read(r.title),
+      playback: read(r.playback),
+      volume: read(r.volume),
+      source: read(r.source),
+      availability: read(r.availability),
+      show_artwork: this._config?.show_artwork,
+      show_station_logo: this._config?.show_station_logo,
+      show_source: this._config?.show_source,
+      show_volume: this._config?.show_volume
+    });
+  }
+
   _parseTrack(value) {
     const text = String(value || "").trim();
     const match = text.match(/^(.+?)\s+-\s+(.+)$/);
@@ -139,6 +198,739 @@ class AtlasCubeRadioCard extends HTMLElement {
     }
 
     return score;
+  }
+
+  _renderStationIdentity(station, enabled, logo) {
+    if (!station || station === "unknown" || station === "unavailable") return "";
+    const safeStation = this._escape(station);
+    if (!enabled) return "<div class=\"station station-identity-text\">" + safeStation + "</div>";
+    if (!logo) return "<div class=\"station-identity\"><div class=\"station station-logo-fallback-visible\">" + safeStation + "</div></div>";
+    return "<div class=\"station-identity\"><img class=\"station-logo\" src=\"" + this._escape(logo) + "\" alt=\"\" aria-hidden=\"true\" onerror=\"this.style.display='none';this.nextElementSibling.style.display='block';\"><div class=\"station station-logo-fallback\">" + safeStation + "</div></div>";
+  }
+
+  _logoCacheBust(value) {
+    const url = String(value || "");
+    if (!url.startsWith("/local/")) return url;
+    return url + (url.includes("?") ? "&" : "?") + "v=" + Date.now();
+  }
+
+  _stationLogoKey(value) {
+    let key = this._normalize(value);
+    // RMF MAXXX to historyczna pisownia tej samej stacji co obecne RMF MAXX.
+    if (key === "rmf maxxx") return "rmf maxx";
+
+    // AtlasCube może zwracać nazwę z dodatkowym prefiksem „Radio”.
+    // Każda nazwa zawierająca markę „Polskie Przeboje” trafia do wspólnego
+    // klucza; logo i tak musi pochodzić z wyniku Radio Browser z favicon.
+    if (key.includes("polskie przeboje")) return "rmf polskie przeboje";
+
+    // Ujednolicamy także pełne nazwy programów Polskiego Radia,
+    // np. „Polskie Radio Program 1 (Jedynka)”, do jednego klucza.
+    if (/\b(jedynka|program 1)\b/.test(key)) return "polskie radio program 1";
+    if (/\b(dwojka|program 2)\b/.test(key)) return "polskie radio program 2";
+    if (/\b(trojka|program 3)\b/.test(key)) return "polskie radio program 3";
+    return key;
+  }
+
+  _stationLogoQueryName(value) {
+    const key = this._stationLogoKey(value);
+    const aliases = {
+      "jedynka": "Polskie Radio Program 1",
+      "polskie radio jedynka": "Polskie Radio Program 1",
+      "polskie radio program 1": "Polskie Radio Program 1",
+      "program 1": "Polskie Radio Program 1",
+      "dwojka": "Polskie Radio Program 2",
+      "polskie radio dwojka": "Polskie Radio Program 2",
+      "polskie radio program 2": "Polskie Radio Program 2",
+      "program 2": "Polskie Radio Program 2",
+      "trojka": "Polskie Radio Program 3",
+      "polskie radio trojka": "Polskie Radio Program 3",
+      "polskie radio program 3": "Polskie Radio Program 3",
+      "program 3": "Polskie Radio Program 3"
+    };
+    if (key === "rmf maxx") return "RMF MAXX";
+    if (key === "rmf fm") return "RMF FM";
+    if (key === "rmf classic") return "RMF CLASSIC";
+    if (key === "rmf polskie przeboje") return "RMF Polskie Przeboje";
+    return aliases[key] || String(value || "").trim();
+  }
+
+  _stationLogoSearchNames(value) {
+    const key = this._stationLogoKey(value);
+    const aliases = {
+      "rmf maxx": ["RMF MAXX", "RMF MAXXX"],
+      "rmf polskie przeboje": [
+        "RMF Polskie Przeboje",
+        "RMF Polskie Przeboje radio",
+        "Polskie Przeboje RMF",
+        "Polskie Przeboje"
+      ],
+      "jedynka": ["Polskie Radio Program 1"],
+      "polskie radio jedynka": ["Polskie Radio Program 1"],
+      "polskie radio program 1": ["Polskie Radio Program 1"],
+      "program 1": ["Polskie Radio Program 1"],
+      "dwojka": ["Polskie Radio Program 2"],
+      "polskie radio dwojka": ["Polskie Radio Program 2"],
+      "polskie radio program 2": ["Polskie Radio Program 2"],
+      "program 2": ["Polskie Radio Program 2"],
+      "trojka": ["Polskie Radio Program 3"],
+      "polskie radio trojka": ["Polskie Radio Program 3"],
+      "polskie radio program 3": ["Polskie Radio Program 3"],
+      "program 3": ["Polskie Radio Program 3"]
+    };
+    return aliases[key] || [this._stationLogoQueryName(value)];
+  }
+
+  _stationLogoStreamUrl(value) {
+    // Źródła pochodzą z domyślnej playlisty AtlasCube:
+    // spiffs_image/config/playlist.csv w repo marcinozog/AtlasCube.
+    // Wyszukiwanie po URL jest pewniejsze niż dopasowanie podobnych nazw.
+    const streams = {
+      "antyradio": "https://an04.cdn.eurozet.pl/ant-web.mp3",
+      "play 90s": "https://live.playradio.org:8443/90HD",
+      "paranormalium": "https://shoutcast.paranormalium.pl:8000/1",
+      "pr wroclaw": "https://stream4.nadaje.com:9241/prw",
+      "eska wroclaw": "https://waw.ic.smcdn.pl/2180-1.mp3",
+      "tok fm": "https://go-audio.toya.net.pl/793",
+      "wnet": "http://audio.radiownet.pl:8000/stream",
+      "polskie radio program 1": "http://mp3.polskieradio.pl:8900/;",
+      "polskie radio program 2": "http://mp3.polskieradio.pl:8902/;",
+      "polskie radio program 3": "http://mp3.polskieradio.pl:8904/;",
+      "rmf fm": "http://195.150.20.242:8000/rmf_fm",
+      "radio zet": "http://zet090-02.cdn.eurozet.pl:8404/;",
+      "radio zlote przeboje": "http://poznan7.radio.pionier.net.pl:8000/tuba9-1.mp3",
+      "rmf maxx": "http://195.150.20.242:8000/rmf_maxxx",
+      "vox fm": "https://waw.ic.smcdn.pl/3210-1.mp3",
+      "muzo fm": "https://stream.rcs.revma.com/1nnezw8qz7zuv",
+      "mc radio": "http://stream4.nadaje.com:10128/mcradio_mp3",
+      "melo radio": "https://n-11-24.dcs.redcdn.pl/sc/o2/Eurozet/live/meloradio.livx?audio=5",
+      "groovesalad 128": "http://ice2.somafm.com/groovesalad-128-mp3",
+      "groovesalad 256": "http://ice2.somafm.com/groovesalad-256-mp3",
+      "blues wave": "https://blueswave.radio:8000/blueswave",
+      "kossuth aac": "http://mr-stream.mediaconnect.hu/4734/mr1.aac"
+    };
+    return streams[this._stationLogoKey(value)] || streams[this._normalize(value)] || null;
+  }
+
+  async _stationLogoStationFromDevice(value) {
+    // Odtwarzamy logikę oryginalnego AtlasCube: używamy nazwy i URL-u
+    // wpisu z playlisty urządzenia, a nie zgadujemy nazwy na podstawie encji HA.
+    const wantedKey = this._stationLogoKey(value);
+    const webUrl = this._webUrl();
+    if (webUrl) {
+      try {
+        let baseUrl = String(webUrl).trim();
+        while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+        const response = await fetch(baseUrl + "/api/playlist", {
+          cache: "no-store",
+          headers: { "Accept": "application/json" }
+        });
+        if (response.ok) {
+          const playlist = await response.json();
+          if (Array.isArray(playlist)) {
+            const match = playlist.find(item =>
+              item?.name && item?.url &&
+              this._stationLogoKey(item.name) === wantedKey
+            );
+            if (match?.name && match?.url) {
+              return { name: String(match.name).trim(), url: String(match.url).trim() };
+            }
+          }
+        }
+      } catch (_) {
+        // Jeśli API urządzenia jest niedostępne, używamy znanego URL-u.
+      }
+    }
+    const fallbackUrl = this._stationLogoStreamUrl(value);
+    return fallbackUrl ? { name: this._stationLogoQueryName(value), url: fallbackUrl } : null;
+  }
+  async _stationLogoRadioBrowserGet(path) {
+    if (!this._hass?.callWS) {
+      console.warn("AtlasCube Local Logos: brak połączenia z Home Assistant; nie można wyszukać logo.");
+      return [];
+    }
+    try {
+      const data = await this._hass.callWS({
+        type: "atlascube_local_logos/search",
+        provider: "radio_browser",
+        path
+      });
+      return Array.isArray(data?.results) ? data.results : [];
+    } catch (error) {
+      console.warn("AtlasCube Local Logos: wyszukiwanie Radio Browser przez integrację nie powiodło się.", error);
+      return [];
+    }
+  }
+
+  _stationNameTokens(value) {
+    return this._normalize(value)
+      .split(/\s+/)
+      .filter(token => token.length >= 2);
+  }
+
+  _levenshtein(a, b) {
+    const aa = String(a || "");
+    const bb = String(b || "");
+    if (aa === bb) return 0;
+    if (!aa.length) return bb.length;
+    if (!bb.length) return aa.length;
+
+    const prev = Array(bb.length + 1);
+    const curr = Array(bb.length + 1);
+
+    for (let j = 0; j <= bb.length; j++) prev[j] = j;
+
+    for (let i = 1; i <= aa.length; i++) {
+      curr[0] = i;
+
+      for (let j = 1; j <= bb.length; j++) {
+        const cost = aa[i - 1] === bb[j - 1] ? 0 : 1;
+        curr[j] = Math.min(
+          curr[j - 1] + 1,
+          prev[j] + 1,
+          prev[j - 1] + cost
+        );
+      }
+
+      for (let j = 0; j <= bb.length; j++) prev[j] = curr[j];
+    }
+
+    return prev[bb.length];
+  }
+
+  _stationNameSimilarity(wanted, candidate) {
+    const wantedTokens = this._stationNameTokens(wanted);
+    const candidateTokens = this._stationNameTokens(candidate);
+
+    if (!wantedTokens.length || !candidateTokens.length) return 0;
+
+    let matched = 0;
+
+    for (const wantedToken of wantedTokens) {
+      let best = 0;
+
+      for (const candidateToken of candidateTokens) {
+        const distance = this._levenshtein(wantedToken, candidateToken);
+        const maxLength = Math.max(wantedToken.length, candidateToken.length);
+        const similarity = maxLength ? 1 - distance / maxLength : 0;
+        best = Math.max(best, similarity);
+      }
+
+      if (best >= 0.88) matched++;
+    }
+
+    return matched / wantedTokens.length;
+  }
+
+  _stationLogoHasConflictingVariant(wanted, candidate) {
+    const wantedKey = this._stationLogoKey(wanted);
+    const candidateText = this._normalize(candidate);
+
+    // Rozróżniamy podmarki RMF. Sam wspólny człon „RMF” nigdy nie wystarcza.
+    const rmfVariants = ["fm", "maxx", "classic", "on", "24"];
+    const wantedRmf = wantedKey.match(/^rmf (fm|maxx|classic|on|24)$/)?.[1];
+    const candidateRmfMatch = candidateText.match(/\brmf\s+(fm|maxxx|maxx|classic|on|24)\b/);
+    const candidateRmf = candidateRmfMatch?.[1] === "maxxx" ? "maxx" : candidateRmfMatch?.[1];
+    if (wantedRmf && candidateRmf && candidateRmf !== wantedRmf) return true;
+
+    // Wariant telewizyjny nie jest tym samym co stacja radiowa
+    // (np. Eska Rock TV nie może zastąpić Eski Rock).
+    const wantedTokensForVariant = this._stationNameTokens(wanted);
+    const candidateTokensForVariant = this._stationNameTokens(candidate);
+    const hasTvSuffix = /\b(tv|telewizja|television)\b/.test(candidateText);
+    const wantedHasTv = /\b(tv|telewizja|television)\b/.test(this._normalize(wanted));
+    if (hasTvSuffix && !wantedHasTv && wantedTokensForVariant.every(token => candidateTokensForVariant.includes(token))) return true;
+
+    // Polskie Radio: Program 1/2/3 oraz Jedynka/Dwójka/Trójka to odrębne marki.
+    const wantedProgram = wantedKey.match(/^polskie radio program ([123])$/)?.[1];
+    const candidateProgram = candidateText.match(/\bprogram ([123])\b/)?.[1];
+    const candidateAlias = /\b(jedynka|dwojka|trojka)\b/.exec(candidateText)?.[1];
+    const aliasProgram = candidateAlias === "jedynka" ? "1"
+      : candidateAlias === "dwojka" ? "2"
+      : candidateAlias === "trojka" ? "3" : null;
+    if (wantedProgram && ((candidateProgram && candidateProgram !== wantedProgram) ||
+        (aliasProgram && aliasProgram !== wantedProgram))) return true;
+
+    return false;
+  }
+
+  _stationLogoScore(result, wanted) {
+    const name = String(result?.name || "").trim();
+    if (!name || !result?.favicon || this._stationLogoHasConflictingVariant(wanted, name)) return -1;
+
+    const normalizedWanted = this._normalize(wanted);
+    const normalizedName = this._normalize(name);
+    if (!normalizedWanted || !normalizedName) return -1;
+
+    const wantedKey = this._stationLogoKey(wanted);
+    const candidateKey = this._stationLogoKey(name);
+    // Nazwa kanoniczna (np. RMF MAXXX/RMF MAXX albo Jedynka/Program 1)
+    // ma pierwszeństwo, ale tylko po wykluczeniu kolidujących wariantów.
+    if (candidateKey === wantedKey) {
+      return 1000 + Math.min(20, (Number(result?.votes) || 0) / 100);
+    }
+
+    const wantedTokens = this._stationNameTokens(wanted);
+    const candidateTokens = this._stationNameTokens(name);
+    const similarity = this._stationNameSimilarity(wanted, name);
+    if (similarity < 0.999) return -1;
+
+    let score = 500 + similarity * 100;
+    if (String(result?.countrycode || "").toUpperCase() === "PL") score += 20;
+    score += Math.min(20, (Number(result?.votes) || 0) / 100);
+    score -= Math.max(0, candidateTokens.length - wantedTokens.length) * 3;
+    return score;
+  }
+
+  _stationLogoCommonsDirect(station) {
+    // Nie przypinamy na sztywno pojedynczych plików: mogą być nieaktualne,
+    // różnić się wariantem kolorystycznym albo przestać działać. Logo wybiera
+    // wyszukiwarka na podstawie nazwy stacji i oceny trafności.
+    return null;
+  }
+
+  async _findCommonsStationLogo(station, requestId) {
+    try {
+      const searchNames = this._stationLogoSearchNames(station);
+      const wantedKey = this._stationLogoKey(station);
+      // Commons limits automated requests. Use at most two focused queries,
+      // sequentially, rather than firing up to eight requests in parallel.
+      const queries = [...new Set(searchNames.slice(0, 2).flatMap(name => [name + " logo", name]))].slice(0, 2);
+      const allPages = new Map();
+
+      for (const query of queries) {
+        if (!this._hass?.callWS) break;
+        try {
+          const data = await this._hass.callWS({
+            type: "atlascube_local_logos/search",
+            provider: "commons",
+            query
+          });
+          if (requestId !== this._stationLogoRequestId) return null;
+          for (const page of (Array.isArray(data?.pages) ? data.pages : [])) {
+            if (page?.pageid != null) allPages.set(String(page.pageid), page);
+          }
+        } catch (error) {
+          console.warn("AtlasCube Local Logos: zapytanie Wikimedia Commons nie powiodło się.", error);
+          break;
+        }
+      }
+      if (requestId !== this._stationLogoRequestId) return null;
+
+      const wantedAliases = searchNames.map(name => ({
+        name,
+        tokens: this._stationNameTokens(name),
+        normalized: this._normalize(name)
+      })).filter(alias => alias.tokens.length);
+
+      const candidates = [...allPages.values()].map(page => {
+        const title = String(page.title || "").replace(/^File:/i, "");
+        const normalizedTitle = this._normalize(title);
+        const titleTokens = this._stationNameTokens(title);
+        const image = page.imageinfo?.[0]?.thumburl || page.imageinfo?.[0]?.url || "";
+        if (!image || this._stationLogoHasConflictingVariant(station, title)) return null;
+
+        const aliasMatch = wantedAliases.some(alias =>
+          alias.tokens.every(token => titleTokens.includes(token) ||
+            (token.length >= 5 && titleTokens.some(candidate =>
+              candidate.length >= 5 && this._levenshtein(token, candidate) === 1)))
+        );
+        if (!aliasMatch) return null;
+
+        const logoTerms = /\b(logo|logotyp|logotype|loga|brand|znak graficzny)\b/i.test(normalizedTitle);
+        const photoTerms = /\b(photo|fotografia|zdjecie|samochod|studio|nadajnik|siedziba|budynek|osoba|mapa|map)\b/i.test(normalizedTitle);
+        const obsoleteTerms = /\b(old|obsolete|historic|history|stare logo|dawne logo|wersja testowa)\b/i.test(normalizedTitle);
+        const startsWithBrand = wantedAliases.some(alias => normalizedTitle.startsWith(alias.normalized));
+        const compactTitle = titleTokens.length <= Math.min(...wantedAliases.map(alias => alias.tokens.length)) + 3;
+
+        // Nie akceptujemy samego podobieństwa nazwy: wynik musi wyglądać
+        // na plik logo albo mieć bardzo zwięzłą nazwę zaczynającą się od marki.
+        if (photoTerms || (!logoTerms && !(startsWithBrand && compactTitle))) return null;
+
+        let score = 100;
+        if (logoTerms) score += 40;
+        if (startsWithBrand) score += 25;
+        if (compactTitle) score += 10;
+        if (obsoleteTerms) score -= 30;
+        return { image, score, title };
+      }).filter(Boolean).sort((a, b) => b.score - a.score);
+
+      const best = candidates[0];
+      return best ? { logo: best.image, source: "wikimedia-commons", matchedTitle: best.title } : null;
+    } catch (error) {
+      console.warn("AtlasCube Radio Card: Wikimedia Commons niedostępne, używam źródła zapasowego.", error);
+      return null;
+    }
+  }
+
+  async _loadStationLogoDiagnostics(station) {
+    const requestId = ++this._stationLogoDiagnosticsRequestId;
+    this._stationLogoDiagnosticsReadyFor = null;
+    this._stationLogoDiagnostics = [];
+    this._render();
+
+    if (!station || station === "unknown" || station === "unavailable") return;
+
+    try {
+      const deviceStation = await this._stationLogoStationFromDevice(station);
+      if (requestId !== this._stationLogoDiagnosticsRequestId) return;
+
+      const candidates = [];
+      const addCandidates = (items, source, limit = 2) => {
+        let added = 0;
+        const sourceKey = source.includes("URL") ? "URL"
+          : source.includes("NAZWA") ? "NAZWA" : "SZUKAJ";
+        for (const item of (Array.isArray(items) ? items : [])) {
+          if (!item?.favicon) continue;
+          const url = String(item.favicon).trim();
+          if (!/^https?:\/\//i.test(url)) continue;
+          added += 1;
+          candidates.push({
+            // Stały identyfikator metody i pozycji; nie zmienia się, gdy inne
+            // logo jest niedostępne albo ten sam URL pojawia się w kilku źródłach.
+            number: sourceKey + "-" + added,
+            logo: url.replace(/^http:/i, "https:"),
+            originalLogo: url,
+            source,
+            matchedName: String(item.name || station),
+            stream: String(item.url || "")
+          });
+          if (added >= limit) break;
+        }
+      };
+
+      if (deviceStation?.url) {
+        const byUrl = await this._stationLogoRadioBrowserGet(
+          "/json/stations/byurl?url=" + encodeURIComponent(deviceStation.url) +
+          "&hidebroken=true&limit=20"
+        );
+        if (requestId !== this._stationLogoDiagnosticsRequestId) return;
+        // Wiersz diagnostyczny celowo pokazuje surowe wyniki URL,
+        // również wtedy, gdy algorytm główny uznałby nazwę za niezgodną.
+        addCandidates(byUrl.sort((a, b) =>
+          (Number(b.clickcount) || 0) - (Number(a.clickcount) || 0)), "1 · URL", 2);
+      }
+
+      if (deviceStation?.name) {
+        const byName = await this._stationLogoRadioBrowserGet(
+          "/json/stations/bynameexact/" + encodeURIComponent(deviceStation.name) +
+          "?hidebroken=true&limit=20"
+        );
+        if (requestId !== this._stationLogoDiagnosticsRequestId) return;
+        addCandidates(byName.sort((a, b) =>
+          (Number(b.clickcount) || 0) - (Number(a.clickcount) || 0)), "2 · NAZWA", 2);
+      }
+
+      const searchNames = this._stationLogoSearchNames(station);
+      const searchResponses = await Promise.all(searchNames.slice(0, 2).map(name =>
+        this._stationLogoRadioBrowserGet(
+          "/json/stations/search?name=" + encodeURIComponent(name) +
+          "&limit=100&order=clickcount&reverse=true"
+        )
+      ));
+      if (requestId !== this._stationLogoDiagnosticsRequestId) return;
+      addCandidates(searchResponses.flat().sort((a, b) =>
+        (Number(b.clickcount) || 0) - (Number(a.clickcount) || 0)), "3 · SZUKAJ", 2);
+
+      // Commons jest osobnym źródłem porównawczym; pokazujemy je jako osobny numer.
+      const commons = await this._findCommonsStationLogo(station, this._stationLogoRequestId);
+      if (requestId !== this._stationLogoDiagnosticsRequestId) return;
+      if (commons?.logo) {
+        candidates.push({
+          number: "COMMONS",
+          logo: commons.logo,
+          originalLogo: commons.logo,
+          source: "4 · COMMONS",
+          matchedName: String(commons.matchedTitle || station)
+        });
+      }
+
+      // Priorytet wyboru zgodny z testami: NAZWA-2 → SZUKAJ-1 → COMMONS
+      // → SZUKAJ-2 → NAZWA-1 → URL-1 → URL-2. Identyfikatory zostają stałe.
+      const priority = ["NAZWA-2", "SZUKAJ-1", "COMMONS", "SZUKAJ-2", "NAZWA-1", "URL-1", "URL-2"];
+      candidates.sort((a, b) => priority.indexOf(a.number) - priority.indexOf(b.number));
+      this._stationLogoDiagnostics = candidates.slice(0, 7);
+      this._stationLogoDiagnosticsReadyFor = station;
+
+    } catch (error) {
+      console.warn("AtlasCube TEST: nie udało się zebrać wyników diagnostycznych logo.", error);
+      this._stationLogoDiagnostics = [];
+      this._stationLogoDiagnosticsReadyFor = station;
+    }
+
+    if (requestId === this._stationLogoDiagnosticsRequestId) this._render();
+  }
+
+  _retryStationLogoImage(img) {
+    if (!img) return;
+    const root = img.getRootNode();
+    const host = root?.host;
+    if (host !== this) return;
+
+    const original = img.dataset.originalSrc || img.src;
+    const step = Number(img.dataset.logoRetryStep || 0);
+
+    // Dwa pośredniki, następnie kolejny kandydat w uzgodnionej kolejności.
+    if (step === 0) {
+      img.dataset.logoRetryStep = "1";
+      img.src = "https://images.weserv.nl/?url=" +
+        encodeURIComponent(original.replace(/^https?:\/\//i, ""));
+      return;
+    }
+    if (step === 1) {
+      img.dataset.logoRetryStep = "2";
+      img.src = "https://wsrv.nl/?url=" +
+        encodeURIComponent(original.replace(/^https?:\/\//i, ""));
+      return;
+    }
+
+    const candidates = this._stationLogoDiagnostics || [];
+    const currentIndex = candidates.findIndex(candidate =>
+      candidate.originalLogo === original || candidate.logo === original
+    );
+    const next = candidates[currentIndex + 1];
+    if (next?.logo) {
+      img.dataset.originalSrc = next.originalLogo || next.logo;
+      img.dataset.logoRetryStep = "0";
+      img.src = next.logo;
+      return;
+    }
+
+    img.style.display = "none";
+    img.parentElement?.classList.add("empty");
+  }
+
+  async _loadStationLogo() {
+    const station = this._getStation();
+    const requestId = ++this._stationLogoRequestId;
+
+    if (!station) {
+      this._stationLogo = null;
+      this._render();
+      return;
+    }
+
+    const cacheKey = this._stationLogoKey(station);
+    const cached = this._stationLogoCache.get(cacheKey);
+    if (cached && (cached.logo || (cached.expiresAt && cached.expiresAt > Date.now()))) {
+      this._stationLogo = cached;
+      this._render();
+      return;
+    }
+    if (cached) this._stationLogoCache.delete(cacheKey);
+
+    this._stationLogo = { logo: null, loading: true, station };
+    this._render();
+
+    let diskFallback = null;
+
+    try {
+      // Najpierw wspólna biblioteka na dysku serwera HA.
+      if (this._hass?.callWS) {
+        try {
+          const local = await this._hass.callWS({ type: "atlascube_local_logos/get", station_key: cacheKey });
+          if (requestId !== this._stationLogoRequestId) return;
+          if (local?.logo) {
+            const selectionMode = local.selection_mode || "legacy";
+            // Tylko aktualny, automatycznie znaleziony wynik jest odczytywany
+            // bez ponownego wyszukiwania. Ręczne i stare wpisy są fallbackiem.
+            if (selectionMode === "automatic" && local.algorithm_version === "0.1.14") {
+              const diskResult = {
+                logo: this._logoCacheBust(local.logo),
+                originalLogo: local.source_url || local.logo,
+                station,
+                source: "disk-auto",
+                selectionMode,
+                matchedName: station,
+                expiresAt: Number.MAX_SAFE_INTEGER,
+                retryAt: null
+              };
+              this._stationLogoCache.set(cacheKey, diskResult);
+              this._stationLogo = diskResult;
+              this._render();
+              return;
+            }
+            diskFallback = {
+              logo: local.logo,
+              originalLogo: local.source_url || local.logo,
+              source: selectionMode === "manual" ? "disk-manual-fallback" : "disk-legacy-fallback",
+              selectionMode,
+              matchedName: station
+            };
+          }
+        } catch (storageError) {
+          console.warn("AtlasCube Local Logos: biblioteka HA niedostępna; szukam online.", storageError);
+        }
+      }
+
+      const deviceStation = await this._stationLogoStationFromDevice(station);
+      if (requestId !== this._stationLogoRequestId) return;
+
+      const wantedKey = this._stationLogoKey(station);
+      const searchNames = this._stationLogoSearchNames(station);
+      let result = null;
+
+      // URL jest pierwszym źródłem, ale nie ufamy rekordowi, jeśli jego nazwa
+      // wskazuje inną stację lub wariant (np. Eska Rock TV zamiast Eska Rock).
+      if (deviceStation?.url) {
+        const byUrl = await this._stationLogoRadioBrowserGet(
+          "/json/stations/byurl?url=" + encodeURIComponent(deviceStation.url) +
+          "&hidebroken=true&limit=20"
+        );
+        if (requestId !== this._stationLogoRequestId) return;
+
+        const urlMatches = byUrl
+          .filter(item => item?.name && item?.favicon)
+          // URL strumienia jest mocnym sygnałem: dopuszczamy nieco inną
+          // pisownię nazwy, ale odrzucamy jawnie inny wariant kanału.
+          .filter(item => !this._stationLogoHasConflictingVariant(station, item.name))
+          .map(item => ({ item, score: this._stationLogoScore(item, station) }))
+          .filter(entry => entry.score >= 0)
+          .sort((a, b) => b.score - a.score ||
+            (Number(b.item.clickcount) || 0) - (Number(a.item.clickcount) || 0))
+          .map(entry => entry.item);
+
+        if (urlMatches[0]) {
+          const item = urlMatches[0];
+          result = {
+            logo: String(item.favicon).replace(/^http:/i, "https:"),
+            originalLogo: String(item.favicon),
+            source: "radio-browser-url-verified-name",
+            matchedName: item.name,
+            matchedStream: deviceStation.url
+          };
+        }
+      }
+
+      // Jeśli URL nie dał potwierdzonego logo, przywracamy szukanie po nazwie.
+      // To ważne dla stacji, których strumień nie jest poprawnie skatalogowany
+      // w Radio Browser. Nigdy nie akceptujemy tu podobnego, lecz innego kanału.
+      if (!result?.logo && deviceStation?.name) {
+        const byExactName = await this._stationLogoRadioBrowserGet(
+          "/json/stations/bynameexact/" + encodeURIComponent(deviceStation.name) +
+          "?hidebroken=true&limit=20"
+        );
+        if (requestId !== this._stationLogoRequestId) return;
+
+        const exactMatches = byExactName
+          .filter(item => item?.name && item?.favicon)
+          .filter(item => !this._stationLogoHasConflictingVariant(station, item.name))
+          .map(item => ({ item, score: this._stationLogoScore(item, station) }))
+          .filter(entry => entry.score >= 0)
+          .sort((a, b) => b.score - a.score ||
+            (Number(b.item.clickcount) || 0) - (Number(a.item.clickcount) || 0))
+          .map(entry => entry.item);
+
+        if (exactMatches[0]) {
+          const item = exactMatches[0];
+          result = {
+            logo: String(item.favicon).replace(/^http:/i, "https:"),
+            originalLogo: String(item.favicon),
+            source: "radio-browser-exact-name",
+            matchedName: item.name
+          };
+        }
+      }
+
+      // Ostatnia próba w Radio Browser: szersze wyszukiwanie, ale tylko
+      // kandydaci o zgodnej, kanonicznej nazwie. Bez dopasowań typu Eska Rock TV.
+      if (!result?.logo) {
+        const responses = await Promise.all(searchNames.map(queryName =>
+          this._stationLogoRadioBrowserGet(
+            "/json/stations/search?name=" + encodeURIComponent(queryName) +
+            "&limit=100&order=clickcount&reverse=true"
+          )
+        ));
+        if (requestId !== this._stationLogoRequestId) return;
+
+        const unique = new Map();
+        for (const item of responses.flat()) {
+          if (!item?.name || !item?.favicon) continue;
+          if (this._stationLogoKey(item.name) !== wantedKey) continue;
+          const id = this._normalize(item.name) + "|" + String(item.favicon);
+          if (!unique.has(id)) unique.set(id, item);
+        }
+
+        const candidates = [...unique.values()]
+          .sort((a, b) => (Number(b.clickcount) || 0) - (Number(a.clickcount) || 0));
+
+        if (candidates[0]) {
+          const item = candidates[0];
+          result = {
+            logo: String(item.favicon).replace(/^http:/i, "https:"),
+            originalLogo: String(item.favicon),
+            source: "radio-browser-name-verified",
+            matchedName: item.name
+          };
+        }
+      }
+
+      if (requestId !== this._stationLogoRequestId) return;
+
+      // Wikimedia Commons jest wyłącznie ostatnim fallbackiem. Jeśli nie
+      // ma pewnego trafienia, lepiej pokazać samą nazwę niż logo innej stacji.
+      if (!result?.logo) {
+        const stationKey = this._stationLogoKey(station);
+        const isRmfSubbrand = /^rmf (fm|maxx|classic|on|24)$/.test(stationKey);
+        if (!isRmfSubbrand) {
+          result = await this._findCommonsStationLogo(station, requestId);
+        }
+      }
+
+      if (!result?.logo && diskFallback?.logo) {
+        // Automat nie znalazł pewnego logo — dopiero teraz wykorzystujemy
+        // wcześniejszy ręczny lub starszy lokalny wpis.
+        result = {
+          logo: this._logoCacheBust(diskFallback.logo),
+          originalLogo: diskFallback.originalLogo,
+          source: diskFallback.source,
+          matchedName: diskFallback.matchedName || station,
+          fromDiskFallback: true
+        };
+      }
+
+      if (requestId !== this._stationLogoRequestId) return;
+      const hasLogo = Boolean(result?.logo);
+      let chosenLogo = hasLogo ? result.logo : null;
+      let chosenSource = result?.source || "none";
+      if (hasLogo && !result?.fromDiskFallback && this._hass?.callWS) {
+        try {
+          const saved = await this._hass.callWS({ type: "atlascube_local_logos/save", station, station_key: cacheKey, url: result.originalLogo || result.logo, selection_mode: "automatic" });
+          if (requestId !== this._stationLogoRequestId) return;
+          if (saved?.logo) {
+            chosenLogo = this._logoCacheBust(saved.logo);
+            chosenSource = "disk-auto";
+          }
+        } catch (saveError) {
+          console.warn("AtlasCube Local Logos: zapis logo nie powiódł się; używam źródła online.", saveError);
+        }
+      }
+      const finalResult = {
+        logo: chosenLogo,
+        originalLogo: result?.originalLogo || result?.logo || null,
+        station,
+        source: chosenSource,
+        matchedName: result?.matchedName || result?.matchedTitle || null,
+        expiresAt: hasLogo ? Number.MAX_SAFE_INTEGER : Date.now() + 180000,
+        retryAt: null
+      };
+      this._stationLogoCache.set(cacheKey, finalResult);
+      this._stationLogo = finalResult;
+      this._render();
+    } catch (error) {
+      if (requestId !== this._stationLogoRequestId) return;
+      const finalResult = {
+        logo: null,
+        station,
+        source: "none",
+        error: error?.message || "Nieznany błąd",
+        expiresAt: Date.now() + 30000,
+        retryAt: null
+      };
+      this._stationLogoCache.set(cacheKey, finalResult);
+      this._stationLogo = finalResult;
+      this._render();
+    }
   }
 
   async _loadArtwork() {
@@ -275,11 +1067,18 @@ class AtlasCubeRadioCard extends HTMLElement {
     const r = this._config?.radio || {};
     const online = this._online();
     const station = this._hass?.states?.[r.station]?.state || "AtlasCube";
+    const stationLogo = this._stationLogo?.logo || "";
+    const stationLogoEnabled = this._config.show_station_logo !== false;
+    const stationLogoSource = String(this._stationLogo?.source || "");
+    const stationLogoSourceLabel = stationLogo
+      ? (/^disk/i.test(stationLogoSource) ? "💾 DYSK" : "🌐 ONLINE")
+      : "";
     const artist = data.artist || "";
     const title = data.title || "Brak informacji o utworze";
     const album = data.album || "";
     const playback = this._hass?.states?.[r.playback]?.state || "";
     const playing = playback === "playing";
+    const idle = online && !playing;
     const volumeState = this._hass?.states?.[r.volume]?.state;
     const volume = Number(volumeState);
     const volumeValue = Number.isFinite(volume) ? Math.max(0, Math.min(100, volume)) : 0;
@@ -334,8 +1133,20 @@ class AtlasCubeRadioCard extends HTMLElement {
         }
 
         .card.has-art { min-height:500px; }
-        .card.playing-noart { background: radial-gradient(circle at 50% 42%, rgba(33,150,243,.18) 0%, rgba(33,150,243,.06) 38%, rgba(0,0,0,.18) 100%); border-color:rgba(33,150,243,.35); }
+        .card.playing-noart { background: radial-gradient(ellipse at 50% 40%, rgba(0,174,255,.46) 0%, rgba(0,145,255,.32) 34%, rgba(0,105,230,.20) 62%, rgba(0,35,95,.16) 100%); border-color:rgba(65,185,255,.58); box-shadow:inset 0 0 42px rgba(0,160,255,.16), 0 0 36px rgba(0,145,255,.20), 0 4px 18px rgba(0,0,0,.25); }
         .card.offline { background:rgba(25,25,25,.45); border-color:rgba(244,67,54,.18); }
+        .card.idle-ready {
+          background: radial-gradient(ellipse at 50% 45%, rgba(33,150,243,.12) 0%, rgba(33,150,243,.055) 48%, rgba(0,0,0,.12) 100%);
+          border-color: rgba(33,150,243,.20);
+          box-shadow: 0 0 24px rgba(33,150,243,.08), 0 4px 18px rgba(0,0,0,.22);
+        }
+        .card.idle-ready .topbar { margin-bottom: 0; }
+        .card.idle-ready .station-logo-slot,
+        .card.idle-ready .station-name,
+        .card.idle-ready .source { display:none !important; }
+        .card.idle-ready .controls { margin-top: 8px; }
+        .card.idle-ready .volume { margin-top: 10px; }
+
 
         .blur-bg-image {
           display: block;
@@ -366,27 +1177,74 @@ class AtlasCubeRadioCard extends HTMLElement {
           align-items: center;
         }
 
+        .version-footer {
+          margin-top:8px; width:100%; text-align:center; font-size:9px;
+          line-height:1.2; letter-spacing:.04em; opacity:.48;
+        }
+        .logo-diagnostics {
+          display:none;
+          width:100%; box-sizing:border-box; margin:0 0 12px; padding:8px;
+          border:1px dashed rgba(255,193,7,.55); border-radius:10px;
+          background:rgba(0,0,0,.10);
+        }
+        .logo-diagnostics.open { display:block; }
+        .logo-picker-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+        #logo-auto, #logo-refresh { margin-top:8px; border:1px solid var(--divider-color); border-radius:8px; padding:7px 10px; background:var(--card-background-color); color:var(--primary-text-color); cursor:pointer; }
+        .logo-diagnostic-item { cursor:pointer; }
+        .station-logo, .station-identity, .station-logo-slot, .station-name { cursor:pointer; }
+        .logo-diagnostic-item.selected { outline:2px solid var(--primary-color, #03a9f4); outline-offset:2px; border-radius:8px; }
+        .logo-diagnostics-heading {
+          margin:0 0 7px; font-size:10px; font-weight:800; opacity:.78;
+          text-align:left; letter-spacing:.05em;
+        }
+        .logo-diagnostics-row {
+          display:flex; align-items:stretch; gap:6px; overflow-x:auto;
+          padding:1px 1px 5px; scrollbar-width:thin;
+        }
+        .logo-diagnostic-item {
+          flex:0 0 76px; min-width:0; min-height:82px; padding:5px 4px;
+          box-sizing:border-box; border:1px solid rgba(255,255,255,.12);
+          border-radius:7px; background:rgba(255,255,255,.045);
+          display:flex; flex-direction:column; align-items:center; gap:4px;
+        }
+        .logo-diagnostic-number { font-size:11px; font-weight:900; }
+        .logo-diagnostic-image {
+          width:64px; height:38px; object-fit:contain; display:block;
+        }
+        .logo-diagnostic-image.failed { display:none; }
+        .logo-diagnostic-failed {
+          display:none; width:64px; height:38px; align-items:center;
+          justify-content:center; font-size:10px; opacity:.45;
+        }
+        .logo-diagnostic-failed.visible { display:flex; }
+        .logo-diagnostic-source {
+          width:100%; font-size:9px; line-height:1.15; text-align:center;
+          opacity:.82; overflow-wrap:anywhere;
+        }
+        .logo-diagnostic-name {
+          width:100%; font-size:9px; line-height:1.15; text-align:center;
+          opacity:.6; overflow-wrap:anywhere;
+        }
         .offline-icon { width:72px; height:72px; display:grid; place-items:center; margin:18px 0 10px; }
         .offline-icon ha-icon { --mdc-icon-size:58px; color:#f44336; }
         .offline-title { font-size:17px; font-weight:700; }
         .offline-text { font-size:13px; opacity:.65; margin-top:4px; }
 
-        .brand { display:flex; align-items:center; justify-content:center; gap:7px; margin-bottom:5px; font-size:17px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; opacity:.9; }
-        .brand-icon { font-size:20px; line-height:1; }
+        .topbar { width:100%; min-height:90px; display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px; box-sizing:border-box; }
+        .brand { display:flex; align-items:center; justify-content:flex-start; gap:7px; margin:0; font-size:16px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; opacity:.94; flex:0 1 auto; min-width:0; }
+        .brand-icon { font-size:22px; line-height:1; }
         .brand-cube { opacity:.58; }
         .brand.web { cursor:pointer; }
         .brand.web:active { transform:scale(.995); }
+        .station-logo-slot { position:relative; flex:0 0 58%; width:58%; max-width:58%; min-width:0; min-height:90px; height:90px; padding:6px 3px 17px; box-sizing:border-box; display:flex; align-items:center; justify-content:flex-end; overflow:visible; }
+        .station-logo { position:relative; z-index:1; display:block; flex:0 1 100%; width:100%; min-width:0; max-width:100%; height:60px; max-height:60px; object-fit:contain; object-position:right center; overflow:visible; filter:drop-shadow(0 0 4px rgba(250,252,255,.98)) drop-shadow(0 0 11px rgba(210,226,250,.82)) drop-shadow(0 0 18px rgba(190,210,240,.36)) drop-shadow(0 2px 5px rgba(0,0,0,.28)); }
+        .station-logo-origin { position:absolute; right:0; bottom:0; z-index:2; padding:2px 4px; border:1px solid rgba(255,255,255,.18); border-radius:5px; background:rgba(8,14,24,.82); color:#eaf3ff; font-size:8px; line-height:1.15; font-weight:800; letter-spacing:.035em; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,.24); pointer-events:none; }
+        .station-logo-origin.disk { border-color:rgba(76,175,80,.65); color:#a5f0a9; }
+        .station-logo-origin.online { border-color:rgba(33,150,243,.65); color:#a8dcff; }
+        .station-logo-slot.empty { display:none; }
+        .station-name { width:100%; margin:0 0 10px; display:flex; align-items:center; justify-content:center; text-align:center; font-size:20px; line-height:1.25; font-weight:700; letter-spacing:.025em; opacity:.96; overflow-wrap:anywhere; box-sizing:border-box; }
 
-        .station {
-          margin-bottom: 12px;
-          font-size: 14px;
-          font-weight: 600;
-          letter-spacing: .04em;
-          opacity: .82;
-          text-align: center;
-        }
-
-        .cover,
+                .cover,
         .no-cover {
           width: 200px;
           height: 200px;
@@ -394,6 +1252,9 @@ class AtlasCubeRadioCard extends HTMLElement {
           object-fit: cover;
           box-shadow: 0 8px 30px rgba(0,0,0,.45);
           background: rgba(0,0,0,.25);
+        }
+        .cover {
+          filter: drop-shadow(0 2px 4px rgba(190,225,255,.30)) drop-shadow(0 7px 10px rgba(0,0,0,.38)) drop-shadow(0 15px 20px rgba(0,0,0,.48));
         }
 
         .no-cover {
@@ -507,28 +1368,39 @@ class AtlasCubeRadioCard extends HTMLElement {
 
         .volume {
           width: min(360px, 90%);
-          margin-top: 14px;
-          display: flex;
+          margin: 14px auto 0;
+          display: grid;
+          grid-template-columns: 38px minmax(0, 1fr) 38px;
           align-items: center;
-          gap: 10px;
+          column-gap: 10px;
+          box-sizing: border-box;
         }
 
         .volume ha-icon {
           --mdc-icon-size: 22px;
+          justify-self: center;
           opacity: .75;
+          transition: color .18s ease, opacity .18s ease, filter .18s ease;
+        }
+        .volume.muted ha-icon {
+          color: #ff3b4f;
+          opacity: 1;
+          filter: drop-shadow(0 0 4px rgba(255,40,60,.95)) drop-shadow(0 0 10px rgba(255,30,50,.72));
         }
 
         .volume input {
-          flex: 1;
+          width: 100%;
           min-width: 0;
+          margin: 0;
           accent-color: #2196f3;
         }
 
         .volume-value {
-          min-width: 38px;
-          text-align: right;
+          width: 38px;
+          text-align: center;
           font-size: 12px;
           opacity: .65;
+          font-variant-numeric: tabular-nums;
         }
 
         .source { width:min(360px,90%); margin-top:12px; display:flex; align-items:center; gap:10px; }
@@ -536,13 +1408,27 @@ class AtlasCubeRadioCard extends HTMLElement {
         .source select { flex:1; min-width:0; height:36px; padding:0 10px; border:1px solid rgba(255,255,255,.12); border-radius:10px; background:rgba(0,0,0,.18); color:inherit; font:inherit; outline:none; }
       </style>
 
-      <div class="card ${!online ? "offline" : artworkEnabled && playing && artwork ? "has-art" : !artworkEnabled && playing ? "playing-noart" : ""}">
+      <div class="card ${!online ? "offline" : idle ? "idle-ready" : artworkEnabled && playing && artwork ? "has-art" : playing && (!artworkEnabled || !artwork) ? "playing-noart" : ""}">
         ${background}
 
         <div class="content">
-          <div class="brand ${webUrl ? "web" : ""}" id="brand" title="${webUrl ? "Otwórz panel AtlasCube" : ""}"><span class="brand-icon">◈</span><span>ATLAS <span class="brand-cube">CUBE</span></span></div>
-          ${!online ? `<div class="offline-icon"><ha-icon icon="mdi:wifi-off"></ha-icon></div><div class="offline-title">Radio AtlasCube</div><div class="offline-text">niedostępne w sieci</div>` : artworkEnabled && playing ? `${station && station !== "unknown" && station !== "unavailable" ? `<div class="station">${this._escape(station)}</div>` : ""}${image}<div class="artist">${this._escape(artist || "Nieznany wykonawca")}</div><div class="title">${this._escape(title)}</div>${album ? `<div class="album">${this._escape(album)}</div>` : ""}` : !artworkEnabled ? `${station && station !== "unknown" && station !== "unavailable" ? `<div class="station">${this._escape(station)}</div>` : ""}${image}` : ""}
-
+          <div class="logo-diagnostics ${this._logoPickerOpen ? "open" : ""}">
+            <div class="logo-diagnostics-heading">PORÓWNANIE WYNIKÓW — STAŁE OZNACZENIA METOD</div><div class="logo-diagnostics-source">Kliknij wynik, aby tymczasowo sprawdzić go jako logo karty.</div>
+            <div class="logo-diagnostics-row">
+              ${(this._stationLogoDiagnostics || []).length ? this._stationLogoDiagnostics.map(item => `
+                <div class="logo-diagnostic-item ${this._stationLogo?.logo === item.logo ? "selected" : ""}" data-logo-index="${this._stationLogoDiagnostics.indexOf(item)}" role="button" tabindex="0" title="Kliknij, aby sprawdzić: ${this._escape(item.number)} — ${this._escape(item.matchedName)} — ${this._escape(item.source)}">
+                  <div class="logo-diagnostic-number">${this._escape(item.number)}</div>
+                  <img class="logo-diagnostic-image" src="${this._escape(item.logo)}" data-original-src="${this._escape(item.originalLogo || item.logo)}" alt="" aria-hidden="true"
+                    onerror="if(!this.dataset.proxyTried){this.dataset.proxyTried='1';const u=this.dataset.originalSrc||this.src;this.src='https://images.weserv.nl/?url='+encodeURIComponent(u.replace(/^https?:\\/\\//i,''));}else{this.classList.add('failed');this.nextElementSibling.classList.add('visible');}">
+                  <div class="logo-diagnostic-failed">brak obrazu</div>
+                  <div class="logo-diagnostic-source">${this._escape(item.source)}</div>
+                  <div class="logo-diagnostic-name">${this._escape(item.matchedName)}</div>
+                </div>
+              `).join("") : `<div class="logo-diagnostic-source">Oczekiwanie na wyniki wyszukiwania…</div>`}
+            </div>
+            <div class="logo-picker-actions"><button id="logo-refresh" type="button" title="Pobierz ponownie logo z tego samego adresu źródłowego">↻ Odśwież zapisane logo</button><button id="logo-auto" type="button">Przywróć wybór automatyczny</button></div>
+          </div>
+          ${!online ? `<div class="topbar"><div class="brand"><span class="brand-icon">◈</span><span>ATLAS <span class="brand-cube">CUBE</span></span></div></div><div class="offline-icon"><ha-icon icon="mdi:wifi-off"></ha-icon></div><div class="offline-title">Radio AtlasCube</div><div class="offline-text">niedostępne w sieci</div>` : `<div class="topbar"><div class="brand ${webUrl ? "web" : ""}" id="brand" title="${webUrl ? "Otwórz panel AtlasCube" : ""}"><span class="brand-icon">◈</span><span>ATLAS <span class="brand-cube">CUBE</span></span></div>${stationLogoEnabled && stationLogo ? `<div class="station-logo-slot"><img class="station-logo" src="${this._escape(stationLogo)}" data-original-src="${this._escape(this._stationLogo?.originalLogo || stationLogo)}" alt="" aria-hidden="true" onerror="this.getRootNode().host._retryStationLogoImage(this)"><span class="station-logo-origin ${/^disk/i.test(stationLogoSource) ? "disk" : "online"}" title="Źródło logo: ${this._escape(stationLogoSource || "nieznane")}">${stationLogoSourceLabel}</span></div>` : ""}</div><div class="station-name">${this._escape(station && station !== "unknown" && station !== "unavailable" ? station : "Radio internetowe")}</div>${artworkEnabled && playing ? `${image}<div class="artist">${this._escape(artist || "Nieznany wykonawca")}</div><div class="title">${this._escape(title)}</div>${album ? `<div class="album">${this._escape(album)}</div>` : ""}` : !artworkEnabled ? `${image}` : ""}`}
           ${online ? `<div class="controls">
             <button class="skip" id="previous" aria-label="Poprzednia stacja">
               <ha-icon icon="mdi:skip-previous"></ha-icon>
@@ -557,16 +1443,143 @@ class AtlasCubeRadioCard extends HTMLElement {
             </button>
           </div>` : ""}
 
-          ${online && this._config.show_volume !== false ? `<div class="volume">
+          ${online && this._config.show_volume !== false ? `<div class="volume ${volumeValue === 0 ? "muted" : ""}">
             <ha-icon icon="mdi:${volumeValue === 0 ? "volume-mute" : volumeValue < 50 ? "volume-medium" : "volume-high"}"></ha-icon>
             <input id="volume" type="range" min="0" max="100" step="1" value="${volumeValue}" aria-label="Głośność">
             <div class="volume-value">${Math.round(volumeValue)}%</div>
           </div>` : ""}
 
           ${online && this._config.show_source !== false && sourceOptions.length ? `<div class="source"><ha-icon icon="mdi:radio-tower"></ha-icon><select id="source" aria-label="Źródło">${sourceOptions.map(option => `<option value="${this._escape(option)}" ${option === sourceValue ? "selected" : ""}>${this._escape(option)}</option>`).join("")}</select></div>` : ""}
+          <div class="version-footer">AtlasCube Radio Card · v0.5.0</div>
         </div>
       </div>
     `;
+
+    const openLogoPicker = event => {
+      event.stopPropagation();
+      this._logoPickerOpen = !this._logoPickerOpen;
+      this._render();
+    };
+    this.shadowRoot.querySelector(".station-logo-slot")?.addEventListener("click", openLogoPicker);
+    this.shadowRoot.querySelector(".station-name")?.addEventListener("click", openLogoPicker);
+
+    this.shadowRoot.querySelector("#logo-refresh")?.addEventListener("click", async event => {
+      event.stopPropagation();
+      const button = event.currentTarget;
+      const station = this._getStation();
+      if (!station || !this._hass?.callWS) return;
+      button.disabled = true;
+      const previousLabel = button.textContent;
+      button.textContent = "Odświeżanie…";
+      try {
+        const result = await this._hass.callWS({
+          type: "atlascube_local_logos/refresh",
+          station_key: this._stationLogoKey(station)
+        });
+        if (this._getStation() !== station || !result?.logo) return;
+        const refreshed = {
+          logo: this._logoCacheBust(result.logo),
+          originalLogo: result.source_url || this._stationLogo?.originalLogo || result.logo,
+          station, source: "disk-refresh", matchedName: this._stationLogo?.matchedName || station,
+          expiresAt: Number.MAX_SAFE_INTEGER, retryAt: null
+        };
+        this._stationLogo = refreshed;
+        this._stationLogoCache.set(this._stationLogoKey(station), refreshed);
+        button.textContent = "Logo odświeżone ✓";
+        this._render();
+      } catch (error) {
+        console.warn("AtlasCube Local Logos: odświeżenie logo nie powiodło się.", error);
+        button.textContent = "Wybierz logo ponownie, aby zapisać źródło";
+        setTimeout(() => { if (button.isConnected) button.textContent = previousLabel; }, 3500);
+      } finally {
+        if (button.isConnected) button.disabled = false;
+      }
+    });
+    this.shadowRoot.querySelector("#logo-auto")?.addEventListener("click", async event => {
+      event.stopPropagation();
+      const station = this._getStation();
+      if (!station || !this._hass?.callWS) return;
+      const key = this._stationLogoKey(station);
+      try {
+        await this._hass.callWS({ type: "atlascube_local_logos/delete", station_key: key });
+      } catch (error) {
+        console.warn("AtlasCube Local Logos: nie udało się usunąć lokalnego logo.", error);
+      }
+      this._stationLogoCache.delete(key);
+      this._stationLogoRequestId += 1;
+      this._logoPickerOpen = false;
+      this._stationLogo = null;
+      this._loadStationLogo();
+    });
+
+    this.shadowRoot.querySelectorAll(".logo-diagnostic-item").forEach(item => {
+      const selectCandidate = () => {
+        const index = Number(item.dataset.logoIndex);
+        const candidate = this._stationLogoDiagnostics[index];
+        const candidateImage = item.querySelector(".logo-diagnostic-image");
+        // Nie pozwalamy wybrać kafelka, którego logo nie udało się wczytać
+        // ani bezpośrednio, ani przez pośredniki. Jeśli proxy zadziałało,
+        // można użyć jego bieżącego adresu jako awaryjnego źródła zapisu.
+        if (!candidate?.logo || candidateImage?.classList.contains("failed")) return;
+        const displayedLogo = candidateImage?.src || candidate.logo
+        const selected = {
+          logo: displayedLogo,
+          originalLogo: candidate.originalLogo || candidate.logo,
+          station: this._getStation(),
+          source: "test-manual-" + candidate.number,
+          matchedName: candidate.matchedName,
+          expiresAt: Number.MAX_SAFE_INTEGER,
+          retryAt: null
+        };
+        this._stationLogoRequestId += 1;
+        const requestId = this._stationLogoRequestId;
+        this._stationLogo = selected;
+        this._stationLogoCache.set(this._stationLogoKey(selected.station), selected);
+        this._render();
+        if (this._hass?.callWS) {
+          const saveManual = async () => {
+            try {
+              return await this._hass.callWS({
+                type: "atlascube_local_logos/save",
+                station: selected.station,
+                station_key: this._stationLogoKey(selected.station),
+                url: candidate.originalLogo || candidate.logo,
+                selection_mode: "manual"
+              });
+            } catch (firstError) {
+              // Część serwerów blokuje favicon bezpośrednio, mimo że obraz
+              // w kafelku działa przez proxy. Spróbujmy wtedy zapisać działający URL.
+              if (displayedLogo && displayedLogo !== (candidate.originalLogo || candidate.logo)) {
+                return await this._hass.callWS({
+                  type: "atlascube_local_logos/save",
+                  station: selected.station,
+                  station_key: this._stationLogoKey(selected.station),
+                  url: displayedLogo,
+                  selection_mode: "manual"
+                });
+              }
+              throw firstError;
+            }
+          };
+          saveManual().then(saved => {
+            if (requestId !== this._stationLogoRequestId || this._getStation() !== selected.station) return;
+            if (saved?.logo) {
+              const persisted = { ...selected, logo: this._logoCacheBust(saved.logo), originalLogo: saved.logo, source: "disk-manual", expiresAt: Number.MAX_SAFE_INTEGER, retryAt: null };
+              this._stationLogo = persisted;
+              this._stationLogoCache.set(this._stationLogoKey(selected.station), persisted);
+              this._render();
+            }
+          }).catch(error => console.warn("AtlasCube Local Logos: zapis ręcznego logo nie powiódł się.", error));
+        }
+      };
+      item.addEventListener("click", selectCandidate);
+      item.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          selectCandidate();
+        }
+      });
+    });
 
     this.shadowRoot.querySelector("#brand")?.addEventListener("click", () => {
       if (webUrl) window.open(webUrl, "_blank", "noopener,noreferrer");
@@ -909,8 +1922,8 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
       </style>
 
       <div class="box">
-        <div class="badge">v0.4</div>
-        <h2>AtlasCube Radio</h2>
+        <div class="badge">AtlasCube Radio Card · v0.5.0</div>
+        <h2>AtlasCube Radio Card v0.5.0</h2>
         <p>Karta wykrywa AtlasCube i korzysta z natywnej dostępności MQTT przez stany jego encji.</p>
 
         <button class="auto" id="auto">🔎 Automatycznie wykryj AtlasCube</button>
@@ -926,10 +1939,16 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
         ${this._field("next", "Następna")}
         ${this._field("availability", "Dostępność — tylko ręczny override")}
 
+
+
         <div class="checks">
           <label>
             <input type="checkbox" id="show_artwork" ${this._config.show_artwork !== false ? "checked" : ""}>
             <span>Okładki utworów</span>
+          </label>
+          <label>
+            <input type="checkbox" id="show_station_logo" ${this._config.show_station_logo !== false ? "checked" : ""}>
+            <span>Logo stacji (TEST)</span>
           </label>
           <label>
             <input type="checkbox" id="show_source" ${this._config.show_source !== false ? "checked" : ""}>
@@ -958,8 +1977,15 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
       });
     });
 
+
+
     this.shadowRoot.querySelector("#show_artwork")?.addEventListener("change", e => {
       this._config.show_artwork = e.target.checked;
+      this._fire();
+    });
+
+    this.shadowRoot.querySelector("#show_station_logo")?.addEventListener("change", e => {
+      this._config.show_station_logo = e.target.checked;
       this._fire();
     });
 
@@ -983,8 +2009,8 @@ customElements.define("atlascube-radio-card", AtlasCubeRadioCard);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "atlascube-radio-card",
-  name: "AtlasCube Radio Card",
-  description: "Compact modern radio card for AtlasCube in Home Assistant",
+  name: "AtlasCube Radio Card v0.5.0",
+  description: "AtlasCube Radio Card z lokalną biblioteką logo",
   preview: true,
   documentationURL: "https://github.com/MarLip1981/atlascube-radio-card"
 });
