@@ -6,7 +6,6 @@
     "http",
     "lovelace"
   ],
-  "categories": ["media_entertainment.music_radio_services"],
   "codeowners": ["@MarLip1981"],
   "config_flow": true,
   "documentation": "https://github.com/MarLip1981/atlascube-radio-card",
