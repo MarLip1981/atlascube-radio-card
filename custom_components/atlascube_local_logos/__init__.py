@@ -9,16 +9,20 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import voluptuous as vol
+from homeassistant import config_entries
 from homeassistant.components import websocket_api
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.lovelace.const import LOVELACE_DATA
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import DOMAIN, LOGO_DIR, MAX_IMAGE_BYTES, WS_DELETE, WS_GET, WS_LIST, WS_SAVE, WS_REFRESH, WS_SEARCH
 
 _LOGGER = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _CARD_URL = "/atlascube-local-logos/atlascube-radio-card.js"
 _CARD_VERSION = "0.5.0"
@@ -34,14 +38,11 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
             StaticPathConfig(_CARD_URL, str(card_path), cache_headers=False)
         ])
     except Exception as err:  # noqa: BLE001
-        # A duplicate route can occur after an integration reload. Continue only
-        # for that known case; other failures should be visible in the HA log.
         message = str(err).lower()
         if "already registered" not in message and "duplicate" not in message:
             _LOGGER.warning("Nie udało się zarejestrować pliku karty AtlasCube: %s", err)
             return
 
-    # Use Home Assistant's typed data key rather than a string literal.
     lovelace = hass.data.get(LOVELACE_DATA)
     if lovelace is None:
         _LOGGER.warning(
@@ -50,8 +51,6 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
         )
         return
 
-    # YAML mode is read-only. Register the module through Home Assistant's
-    # frontend helper instead of trying to write to the YAML resource list.
     if getattr(lovelace, "resource_mode", "storage") == "yaml":
         add_extra_js_url(hass, _RESOURCE_URL)
         _LOGGER.info("Zarejestrowano kartę AtlasCube jako dodatkowy moduł JS.")
@@ -63,8 +62,6 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
         return
 
     try:
-        # ResourceStorageCollection is lazy-loaded. Load it before async_items
-        # or async_create_item to avoid overwriting existing dashboard resources.
         if not getattr(resources, "loaded", True):
             await resources.async_load()
 
@@ -79,7 +76,6 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
                 await resources.async_update_item(
                     primary["id"], {"res_type": "module", "url": _RESOURCE_URL}
                 )
-            # Remove duplicates of this integration's URL, if any.
             for duplicate in matching[1:]:
                 await resources.async_delete_item(duplicate["id"])
             _LOGGER.info("Zasób karty AtlasCube jest już zarejestrowany: %s", _RESOURCE_URL)
@@ -196,7 +192,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             if selection_mode not in {"automatic", "manual"}:
                 raise ValueError("Nieprawidłowy tryb wyboru logo")
             session = async_get_clientsession(hass)
-            # Walidujemy każdy skok przekierowania osobno, zanim wykonamy następne żądanie.
             current_url = url
             body = b""
             content_type = ""
@@ -231,7 +226,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
                 if old.exists() and old != target:
                     old.unlink()
             target.write_bytes(body)
-            # Zapamiętujemy dokładny adres źródłowy, aby Odśwież pobierał ten sam wariant logo.
             metadata = folder / f"{key}.json"
             metadata.write_text(json.dumps({
                 "source_url": url,
@@ -336,8 +330,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
                 if not allowed_path:
                     raise ValueError("Niedozwolona ścieżka wyszukiwania Radio Browser")
                 host_errors = []
-                # Use only mirrors listed by Radio Browser's own server directory.
-                # Keep every failure: reporting only the last mirror hid the real cause.
                 for host in ("de1.api.radio-browser.info", "nl1.api.radio-browser.info"):
                     try:
                         async with session.get(
@@ -361,8 +353,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             if not query or len(query) > 200:
                 raise ValueError("Nieprawidłowe zapytanie Wikimedia Commons")
 
-            # Commons started returning HTTP 429. Respect Retry-After and stop
-            # repeated card requests from hammering the API during its cooldown.
             state = hass.data.setdefault(DOMAIN, {})
             now = time.monotonic()
             cooldown_until = float(state.get("commons_cooldown_until", 0))
@@ -420,9 +410,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     folder = Path(hass.config.path("www", LOGO_DIR))
     folder.mkdir(parents=True, exist_ok=True)
     hass.data.setdefault(DOMAIN, {})["folder"] = folder
-    # Config-entry setup also runs when the user adds the integration after HA
-    # has already started, so registration must happen here rather than waiting
-    # for EVENT_HOMEASSISTANT_STARTED.
     await _async_register_frontend(hass)
     return True
 
