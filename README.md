@@ -4,9 +4,9 @@
 
 A compact, modern Home Assistant Lovelace card for AtlasCube radio devices.
 
-> **Version 0.5.0 — release candidate; not yet released**
+> **Version 0.5.0 — candidate for final verification**
 >
-> This branch adds station-logo search, a local logo cache, and manual logo selection. The existing stable release remains unchanged until this candidate has been verified.
+> This version brings the tested local station-logo library into the official card package. The main branch remains unchanged until review and verification are complete.
 
 ---
 
@@ -30,6 +30,7 @@ A compact, modern Home Assistant Lovelace card for AtlasCube radio devices.
 - Does not require a separate ping sensor
 - Optional manual availability override
 - Optional album artwork, source and volume sections
+- Ordered station-logo search, local disk cache and manual selection
 
 ### Requirements
 
@@ -42,11 +43,16 @@ The card discovers the AtlasCube device from the Home Assistant device/entity re
 
 ### Installation with HACS
 
-The card repository is distributed as a HACS **Dashboard**. Install it from the HACS dashboard catalogue (or add `MarLip1981/atlascube-radio-card` as a custom repository of type **Dashboard** if needed), then install the card and reload the frontend if requested.
+Install this repository through HACS as a **custom repository of type Integration**:
 
-#### Important: local station-logo library
+1. Open HACS → three-dot menu → **Custom repositories**.
+2. Add `MarLip1981/atlascube-radio-card` and select **Integration**.
+3. Install **AtlasCube Radio Card**.
+4. Restart Home Assistant.
+5. Open Settings → Devices & services → **Add integration** and add **AtlasCube Local Logos**.
+6. Refresh the Home Assistant frontend. The integration serves the bundled card JavaScript and registers it automatically; do not add a manual Lovelace resource.
 
-The local logo cache and server-side search require the Home Assistant integration `atlascube_local_logos`. HACS assigns one repository type to a repository, so the Dashboard package cannot automatically install its `custom_components` folder as an Integration. Until a separate, properly published companion Integration repository is available, the integration files included in this repository must be copied to `config/custom_components/atlascube_local_logos/` (including `__init__.py`, `config_flow.py`, `const.py`, `manifest.json`, `strings.json`, and the bundled `atlascube-radio-card.js`), followed by a Home Assistant restart and adding **AtlasCube Local Logos** under Settings → Devices & services → Add integration. Do not install the test integration and the bundled integration simultaneously. This manual step is a known release limitation; the local-logo feature must not be advertised as one-click HACS installation yet.
+This is the same installation model used by the tested local-logo package. The integration and the bundled JavaScript must be kept in sync; the repository includes both copies. If the old test integration is installed, remove it before installing this official package to avoid duplicate websocket handlers and frontend resources.
 
 ### Automatic configuration
 
@@ -151,6 +157,7 @@ Download `atlascube-radio-card.js` from this repository and add it as a Lovelace
 - Brak potrzeby tworzenia osobnego sensora ping
 - Opcjonalny ręczny override dostępności
 - Opcjonalne okładki, sekcje źródła i głośności
+- Uporządkowane wyszukiwanie logo stacji, lokalny cache na dysku i ręczny wybór
 
 ### Wymagania
 
@@ -163,11 +170,16 @@ Karta wykrywa urządzenie na podstawie rejestru urządzeń i encji Home Assistan
 
 ### Instalacja przez HACS
 
-Repozytorium karty ma typ HACS **Dashboard**. Zainstaluj AtlasCube Radio Card z katalogu HACS (lub dodaj `MarLip1981/atlascube-radio-card` jako repozytorium niestandardowe typu **Dashboard**, jeśli będzie to potrzebne), a następnie przeładuj frontend, jeśli HA o to poprosi.
+Zainstaluj repozytorium przez HACS jako **niestandardowe repozytorium typu Integration**:
 
-#### Ważne: lokalna biblioteka logo
+1. Otwórz HACS → menu trzech kropek → **Niestandardowe repozytoria**.
+2. Dodaj `MarLip1981/atlascube-radio-card` i wybierz typ **Integration**.
+3. Zainstaluj **AtlasCube Radio Card**.
+4. Uruchom ponownie Home Assistant.
+5. Otwórz Ustawienia → Urządzenia i usługi → **Dodaj integrację** i dodaj **AtlasCube Local Logos**.
+6. Odśwież frontend Home Assistant. Integracja sama udostępnia dołączony plik JavaScript karty i automatycznie rejestruje zasób Lovelace — nie dodawaj go ręcznie.
 
-Lokalny cache logo i wyszukiwanie wykonywane po stronie serwera wymagają integracji Home Assistant `atlascube_local_logos`. HACS przypisuje repozytorium jeden typ, więc pakiet typu Dashboard nie instaluje automatycznie folderu `custom_components` jako integracji. Do czasu opublikowania osobnego, prawidłowo przygotowanego repozytorium integracji trzeba skopiować pliki z `custom_components/atlascube_local_logos/` do `config/custom_components/atlascube_local_logos/` (w tym `__init__.py`, `config_flow.py`, `const.py`, `manifest.json`, `strings.json` i dołączony `atlascube-radio-card.js`), uruchomić ponownie Home Assistant i dodać **AtlasCube Local Logos** w Ustawienia → Urządzenia i usługi → Dodaj integrację. Nie instaluj jednocześnie integracji testowej i tej dołączonej do repozytorium. To znane ograniczenie wydania — lokalnego logo nie należy jeszcze przedstawiać jako instalacji jednym kliknięciem przez HACS.
+To ten sam sposób instalacji, który działał w testowym pakiecie z lokalnymi logo. Integracja i dołączony plik JavaScript muszą być aktualizowane razem; w repozytorium znajdują się obie kopie. Jeśli masz zainstalowaną wcześniejszą integrację testową, usuń ją przed instalacją oficjalnego pakietu, aby uniknąć zdublowanych obsług websocket i zasobów frontendowych.
 
 ### Automatyczna konfiguracja
 
