@@ -7,7 +7,7 @@
   "config_flow": true,
   "documentation": "https://github.com/MarLip1981/atlascube-radio-card",
   "iot_class": "local_push",
-  "version": "0.1.17",
+  "version": "0.5.0",
   "requirements": [],
   "after_dependencies": [
     "frontend",
