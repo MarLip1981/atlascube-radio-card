@@ -259,7 +259,7 @@ Po wyłączeniu okładek karta wraca do kompaktowego widoku radia z tęczową an
 
 ### Instalacja ręczna
 
-Pobierz `atlascube-radio-card.js` z tego repozytorium i dodaj go jako zasób JavaScript Lovelace.
+Ta metoda dotyczy wyłącznie starszej instalacji karty jako repozytorium Dashboard. W instalacji v0.5.0 przez integrację **AtlasCube Local Logos** nie dodawaj pliku JavaScript ręcznie — integracja rejestruje zasób automatycznie. Przed migracją usuń stary zasób Lovelace wskazujący na `atlascube-radio-card.js`, aby nie ładować dwóch kopii karty.
 
 ---
 
