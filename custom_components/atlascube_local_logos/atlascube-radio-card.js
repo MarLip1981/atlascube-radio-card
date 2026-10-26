@@ -25,6 +25,7 @@ class AtlasCubeRadioCard extends HTMLElement {
       show_artwork: true,
       show_station_logo: true,
       show_source: true,
+      show_logo_source: true,
       show_volume: true,
       ...config,
       radio: { ...(config?.radio || {}) }
@@ -45,6 +46,7 @@ class AtlasCubeRadioCard extends HTMLElement {
       show_artwork: true,
       show_station_logo: true,
       show_source: true,
+      show_logo_source: true,
       show_volume: true,
       radio: {}
     };
@@ -151,6 +153,7 @@ class AtlasCubeRadioCard extends HTMLElement {
       show_artwork: this._config?.show_artwork,
       show_station_logo: this._config?.show_station_logo,
       show_source: this._config?.show_source,
+      show_logo_source: this._config?.show_logo_source,
       show_volume: this._config?.show_volume
     });
   }
@@ -1230,7 +1233,7 @@ class AtlasCubeRadioCard extends HTMLElement {
         .offline-title { font-size:17px; font-weight:700; }
         .offline-text { font-size:13px; opacity:.65; margin-top:4px; }
 
-        .topbar { width:100%; min-height:90px; display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px; box-sizing:border-box; }
+        .topbar { width:100%; min-height:90px; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:6px; box-sizing:border-box; padding-top:2px; }
         .brand { display:flex; align-items:center; justify-content:flex-start; gap:7px; margin:0; font-size:16px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; opacity:.94; flex:0 1 auto; min-width:0; }
         .brand-icon { font-size:22px; line-height:1; }
         .brand-cube { opacity:.58; }
@@ -1428,7 +1431,7 @@ class AtlasCubeRadioCard extends HTMLElement {
             </div>
             <div class="logo-picker-actions"><button id="logo-refresh" type="button" title="Pobierz ponownie logo z tego samego adresu źródłowego">↻ Odśwież zapisane logo</button><button id="logo-auto" type="button">Przywróć wybór automatyczny</button></div>
           </div>
-          ${!online ? `<div class="topbar"><div class="brand"><span class="brand-icon">◈</span><span>ATLAS <span class="brand-cube">CUBE</span></span></div></div><div class="offline-icon"><ha-icon icon="mdi:wifi-off"></ha-icon></div><div class="offline-title">Radio AtlasCube</div><div class="offline-text">niedostępne w sieci</div>` : `<div class="topbar"><div class="brand ${webUrl ? "web" : ""}" id="brand" title="${webUrl ? "Otwórz panel AtlasCube" : ""}"><span class="brand-icon">◈</span><span>ATLAS <span class="brand-cube">CUBE</span></span></div>${stationLogoEnabled && stationLogo ? `<div class="station-logo-slot"><img class="station-logo" src="${this._escape(stationLogo)}" data-original-src="${this._escape(this._stationLogo?.originalLogo || stationLogo)}" alt="" aria-hidden="true" onerror="this.getRootNode().host._retryStationLogoImage(this)"><span class="station-logo-origin ${/^disk/i.test(stationLogoSource) ? "disk" : "online"}" title="Źródło logo: ${this._escape(stationLogoSource || "nieznane")}">${stationLogoSourceLabel}</span></div>` : ""}</div><div class="station-name">${this._escape(station && station !== "unknown" && station !== "unavailable" ? station : "Radio internetowe")}</div>${artworkEnabled && playing ? `${image}<div class="artist">${this._escape(artist || "Nieznany wykonawca")}</div><div class="title">${this._escape(title)}</div>${album ? `<div class="album">${this._escape(album)}</div>` : ""}` : !artworkEnabled ? `${image}` : ""}`}
+          ${!online ? `<div class="topbar"><div class="brand"><span class="brand-icon">◈</span><span>ATLAS <span class="brand-cube">CUBE</span></span></div></div><div class="offline-icon"><ha-icon icon="mdi:wifi-off"></ha-icon></div><div class="offline-title">Radio AtlasCube</div><div class="offline-text">niedostępne w sieci</div>` : `<div class="topbar"><div class="brand ${webUrl ? "web" : ""}" id="brand" title="${webUrl ? "Otwórz panel AtlasCube" : ""}"><span class="brand-icon">◈</span><span>ATLAS <span class="brand-cube">CUBE</span></span></div>${stationLogoEnabled && stationLogo ? `<div class="station-logo-slot"><img class="station-logo" src="${this._escape(stationLogo)}" data-original-src="${this._escape(this._stationLogo?.originalLogo || stationLogo)}" alt="" aria-hidden="true" onerror="this.getRootNode().host._retryStationLogoImage(this)"><span class="station-logo-origin ${/^disk/i.test(stationLogoSource) ? "disk" : "online"}" title="Źródło logo: ${this._escape(stationLogoSource || "nieznane")}">${this._config.show_logo_source !== false ? stationLogoSourceLabel : ""}</span></div>` : ""}</div><div class="station-name">${this._escape(station && station !== "unknown" && station !== "unavailable" ? station : "Radio internetowe")}</div>${artworkEnabled && playing ? `${image}<div class="artist">${this._escape(artist || "Nieznany wykonawca")}</div><div class="title">${this._escape(title)}</div>${album ? `<div class="album">${this._escape(album)}</div>` : ""}` : !artworkEnabled ? `${image}` : ""}`}
           ${online ? `<div class="controls">
             <button class="skip" id="previous" aria-label="Poprzednia stacja">
               <ha-icon icon="mdi:skip-previous"></ha-icon>
@@ -1450,7 +1453,7 @@ class AtlasCubeRadioCard extends HTMLElement {
           </div>` : ""}
 
           ${online && this._config.show_source !== false && sourceOptions.length ? `<div class="source"><ha-icon icon="mdi:radio-tower"></ha-icon><select id="source" aria-label="Źródło">${sourceOptions.map(option => `<option value="${this._escape(option)}" ${option === sourceValue ? "selected" : ""}>${this._escape(option)}</option>`).join("")}</select></div>` : ""}
-          <div class="version-footer">AtlasCube Radio Card · v0.5.0</div>
+          <div class="version-footer">v0.5.0</div>
         </div>
       </div>
     `;
@@ -1631,7 +1634,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._hass = null;
-    this._config = { show_artwork: true, show_source: true, show_volume: true, radio: {} };
+    this._config = { show_artwork: true, show_source: true, show_logo_source: true, show_volume: true, radio: {} };
     this._autoDetected = false;
     this._deviceRegistry = null;
     this._entityRegistry = null;
@@ -1952,7 +1955,11 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
           </label>
           <label>
             <input type="checkbox" id="show_source" ${this._config.show_source !== false ? "checked" : ""}>
-            <span>Pokaż źródło</span>
+            <span>Pokaż wybór źródła</span>
+          </label>
+          <label>
+            <input type="checkbox" id="show_logo_source" ${this._config.show_logo_source !== false ? "checked" : ""}>
+            <span>Pokaż źródło logo (DYSK/ONLINE)</span>
           </label>
           <label>
             <input type="checkbox" id="show_volume" ${this._config.show_volume !== false ? "checked" : ""}>
@@ -1991,6 +1998,11 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
 
     this.shadowRoot.querySelector("#show_source")?.addEventListener("change", e => {
       this._config.show_source = e.target.checked;
+      this._fire();
+    });
+
+    this.shadowRoot.querySelector("#show_logo_source")?.addEventListener("change", e => {
+      this._config.show_logo_source = e.target.checked;
       this._fire();
     });
 
