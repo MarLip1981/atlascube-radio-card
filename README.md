@@ -265,15 +265,15 @@ Ta metoda dotyczy wyłącznie starszej instalacji karty jako repozytorium Dashbo
 
 ## Screenshots
 
-### Card in Home Assistant
+### Current card appearance — 26 October 2026
+
+![AtlasCube Radio Card — current appearance, 26 October 2026](./Screenshot_20261026_065604_Home%20Assistant.jpg)
+
+### Earlier card and configuration views
 
 ![AtlasCube Radio Card in Home Assistant](./Screenshot_20261003_183147_Home%20Assistant.jpg)
 
-### Card configuration editor
-
 ![AtlasCube Radio Card configuration editor](./Screenshot_20261003_183250_Home%20Assistant.jpg)
-
-### Additional card views
 
 ![AtlasCube Radio Card view](./Screenshot_20261003_183309_Home%20Assistant.jpg)
 
