@@ -1,5 +1,6 @@
 """Server-side logo cache for the AtlasCube Lovelace card."""
 from __future__ import annotations
+import hashlib
 import ipaddress
 import json
 import logging
@@ -18,14 +19,18 @@ from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.lovelace.const import LOVELACE_DATA
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from .const import DOMAIN, LOGO_DIR, MAX_IMAGE_BYTES, WS_DELETE, WS_GET, WS_LIST, WS_SAVE, WS_REFRESH, WS_SEARCH
+from .const import (
+    DOMAIN, LOGO_DIR, COVER_DIR, MAX_IMAGE_BYTES, MAX_COVER_BYTES,
+    WS_DELETE, WS_GET, WS_LIST, WS_SAVE, WS_REFRESH, WS_SEARCH, WS_ARTWORK_SET,
+    PLATFORMS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _CARD_URL = "/atlascube-local-logos/atlascube-radio-card.js"
-_CARD_VERSION = "0.5.0"
+_CARD_VERSION = "0.5.1"
 _RESOURCE_URL = f"{_CARD_URL}?v={_CARD_VERSION}"
 
 
@@ -123,7 +128,12 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Register websocket commands and prepare the local folder."""
     folder = Path(hass.config.path("www", LOGO_DIR))
     folder.mkdir(parents=True, exist_ok=True)
-    hass.data.setdefault(DOMAIN, {})["folder"] = folder
+    cover_folder = Path(hass.config.path("www", COVER_DIR))
+    cover_folder.mkdir(parents=True, exist_ok=True)
+    state = hass.data.setdefault(DOMAIN, {})
+    state["folder"] = folder
+    state["cover_folder"] = cover_folder
+    state.setdefault("current_artwork", "none")
 
     @websocket_api.websocket_command({vol.Required("type"): WS_GET, vol.Required("station_key"): str})
     @websocket_api.async_response
@@ -310,6 +320,86 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             connection.send_error(msg["id"], "logo_refresh_failed", str(err))
 
     @websocket_api.websocket_command({
+        vol.Required("type"): WS_ARTWORK_SET,
+        vol.Required("track"): str,
+        vol.Optional("url", default=""): str,
+    })
+    @websocket_api.async_response
+    async def ws_artwork_set(hass, connection, msg):
+        """Cache the artwork already selected by the Lovelace card."""
+        try:
+            track = str(msg.get("track", "")).strip()
+            url = str(msg.get("url", "")).strip()
+            state = hass.data[DOMAIN]
+            cover_folder = state["cover_folder"]
+            if not track or not url:
+                state["current_artwork"] = "none"
+                sensor = state.get("artwork_sensor")
+                if sensor:
+                    sensor.async_write_ha_state()
+                connection.send_result(msg["id"], {"artwork": "none", "cleared": True})
+                return
+
+            if len(track) > 500:
+                raise ValueError("Nazwa utworu jest zbyt długa")
+            url = _public_url(url)
+            key = hashlib.sha256(track.casefold().encode("utf-8")).hexdigest()[:24]
+            target = cover_folder / f"{key}.jpg"
+            if not target.is_file():
+                session = async_get_clientsession(hass)
+                current_url = url
+                body = b""
+                for redirect_count in range(4):
+                    current_url = _public_url(current_url)
+                    async with session.get(current_url, allow_redirects=False, timeout=15) as response:
+                        if response.status in (301, 302, 303, 307, 308):
+                            location = response.headers.get("Location")
+                            if not location or redirect_count == 3:
+                                raise ValueError("Nieprawidłowe przekierowanie okładki")
+                            current_url = urljoin(current_url, location)
+                            continue
+                        if response.status != 200:
+                            raise ValueError(f"Źródło okładki zwróciło HTTP {response.status}")
+                        content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+                        if content_type not in {"image/jpeg", "image/jpg"}:
+                            raise ValueError("Okładka musi być obrazem JPEG")
+                        if response.content_length is not None and response.content_length > MAX_COVER_BYTES:
+                            raise ValueError("Okładka przekracza limit 700 KB")
+                        body = await response.content.read(MAX_COVER_BYTES + 1)
+                        if not body or len(body) > MAX_COVER_BYTES:
+                            raise ValueError("Pusta okładka lub przekroczony limit 700 KB")
+                        break
+                else:
+                    raise ValueError("Nie udało się pobrać okładki")
+
+                temporary = target.with_suffix(".jpg.tmp")
+                temporary.write_bytes(body)
+                temporary.replace(target)
+
+            relative_url = f"/local/{COVER_DIR}/{target.name}"
+            state["current_artwork"] = relative_url
+            sensor = state.get("artwork_sensor")
+            if sensor:
+                sensor.async_write_ha_state()
+
+            cached = sorted(
+                (item for item in cover_folder.glob("*.jpg") if item.is_file()),
+                key=lambda item: item.stat().st_mtime,
+                reverse=True,
+            )
+            for old_file in cached[100:]:
+                old_file.unlink(missing_ok=True)
+
+            connection.send_result(msg["id"], {
+                "artwork": relative_url,
+                "bytes": target.stat().st_size,
+                "cached": True,
+            })
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Nie udało się zapisać okładki utworu: %s", err)
+            connection.send_error(msg["id"], "artwork_save_failed", str(err))
+
+    @websocket_api.websocket_command({
         vol.Required("type"): WS_SEARCH,
         vol.Required("provider"): vol.In(["radio_browser", "commons"]),
         vol.Optional("path"): str,
@@ -402,6 +492,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     websocket_api.async_register_command(hass, ws_delete)
     websocket_api.async_register_command(hass, ws_refresh)
     websocket_api.async_register_command(hass, ws_search)
+    websocket_api.async_register_command(hass, ws_artwork_set)
     return True
 
 
@@ -409,11 +500,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Ensure storage directory exists when integration is added."""
     folder = Path(hass.config.path("www", LOGO_DIR))
     folder.mkdir(parents=True, exist_ok=True)
-    hass.data.setdefault(DOMAIN, {})["folder"] = folder
+    state = hass.data.setdefault(DOMAIN, {})
+    state["folder"] = folder
+    state.setdefault("current_artwork", "none")
+    cover_folder = Path(hass.config.path("www", COVER_DIR))
+    cover_folder.mkdir(parents=True, exist_ok=True)
+    state["cover_folder"] = cover_folder
     await _async_register_frontend(hass)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Keep logo files when integration is unloaded."""
-    return True
+    """Keep cached images when the integration is unloaded."""
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
