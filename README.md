@@ -75,6 +75,10 @@ The editor detects the AtlasCube device and fills the main entity fields automat
 
 The Availability field is optional and should normally remain empty.
 
+### Local track artwork for ESPHome
+
+When album artwork is enabled, the card forwards the already-selected cover to the integration. The integration stores the JPEG locally in `www/atlascube-radio-covers` and exposes its relative URL through `sensor.atlascube_radio_cover_url`. The cache keeps up to 100 covers. This does not perform a second iTunes search.
+
 ### MQTT availability
 
 AtlasCube exposes its availability through MQTT. Home Assistant processes this availability information and applies it to the native AtlasCube entities.
