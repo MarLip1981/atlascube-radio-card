@@ -10,6 +10,8 @@ class AtlasCubeRadioCard extends HTMLElement {
     this._cache = new Map();
     this._stationLogoCache = new Map();
     this._requestId = 0;
+    this._artworkSyncPromise = Promise.resolve();
+    this._lastArtworkSyncSignature = null;
     this._stationLogoRequestId = 0;
     this._stationLogoDiagnostics = [];
     this._stationLogoDiagnosticsRequestId = 0;
@@ -940,6 +942,7 @@ class AtlasCubeRadioCard extends HTMLElement {
     const rawTrack = this._getTrack();
     const { artist, title } = this._parseTrack(rawTrack);
     const requestId = ++this._requestId;
+    this._syncArtworkToHomeAssistant(rawTrack, "");
 
     if (!rawTrack || !title) {
       this._applyResult({ rawTrack, artist, title, artwork: null, album: "" });
@@ -1024,7 +1027,28 @@ class AtlasCubeRadioCard extends HTMLElement {
   _applyResult(data) {
     this._status = "";
     this._data = data;
+    this._syncArtworkToHomeAssistant(data?.rawTrack || "", data?.artwork || "");
     this._render();
+  }
+
+  _syncArtworkToHomeAssistant(track, artwork) {
+    if (!this._hass?.callWS) return;
+    const safeTrack = String(track || "");
+    const safeArtwork = String(artwork || "");
+    const signature = `${safeTrack}\n${safeArtwork}`;
+    if (signature === this._lastArtworkSyncSignature) return;
+    this._lastArtworkSyncSignature = signature;
+
+    this._artworkSyncPromise = this._artworkSyncPromise
+      .catch(() => {})
+      .then(() => this._hass.callWS({
+        type: "atlascube_local_logos/artwork_set",
+        track: safeTrack,
+        url: safeArtwork
+      }))
+      .catch(error => {
+        console.warn("AtlasCube Local Logos: nie udało się przekazać okładki do Home Assistanta.", error);
+      });
   }
 
   _setStatus(status) {
