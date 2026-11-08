@@ -1,4 +1,4 @@
-"""Server-side logo cache for the AtlasCube Lovelace card."""
+"""Server-side station-logo and track-artwork cache for the AtlasCube card."""
 from __future__ import annotations
 import hashlib
 import ipaddress
@@ -377,6 +377,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
                 temporary.write_bytes(body)
                 temporary.replace(target)
 
+            target.touch()
             relative_url = f"/local/{COVER_DIR}/{target.name}"
             state["current_artwork"] = relative_url
             sensor = state.get("artwork_sensor")
@@ -514,4 +515,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Keep cached images when the integration is unloaded."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        hass.data.get(DOMAIN, {}).pop("artwork_sensor", None)
+    return unloaded
