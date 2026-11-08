@@ -345,7 +345,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             url = _public_url(url)
             key = hashlib.sha256(track.casefold().encode("utf-8")).hexdigest()[:24]
             target = cover_folder / f"{key}.jpg"
-            if not target.is_file():
+            was_cached = target.is_file()
+            if not was_cached:
                 session = async_get_clientsession(hass)
                 current_url = url
                 body = b""
@@ -393,7 +394,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             connection.send_result(msg["id"], {
                 "artwork": relative_url,
                 "bytes": target.stat().st_size,
-                "cached": True,
+                "cached": was_cached,
             })
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("Nie udało się zapisać okładki utworu: %s", err)
@@ -424,7 +425,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
                     try:
                         async with session.get(
                             "https://" + host + path,
-                            headers={"Accept": "application/json", "User-Agent": "AtlasCube-Local-Logos/0.5.0"},
+                            headers={"Accept": "application/json", "User-Agent": "AtlasCube-Local-Logos/0.5.1"},
                             timeout=12,
                         ) as response:
                             if response.status != 200:
@@ -461,7 +462,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             async with session.get(
                 "https://commons.wikimedia.org/w/api.php",
                 params=params,
-                headers={"Accept": "application/json", "User-Agent": "AtlasCube-Local-Logos/0.5.0 (https://github.com/MarLip1981/atlascube-radio-card)"},
+                headers={"Accept": "application/json", "User-Agent": "AtlasCube-Local-Logos/0.5.1 (https://github.com/MarLip1981/atlascube-radio-card)"},
                 timeout=15,
             ) as response:
                 if response.status == 429:
