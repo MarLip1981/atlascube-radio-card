@@ -4,9 +4,9 @@
 
 A compact, modern Home Assistant Lovelace card for AtlasCube radio devices.
 
-> **Version 0.5.0 — candidate for final verification**
+> **Version 0.5.1 — local track-artwork bridge**
 >
-> This version brings the tested local station-logo library into the official card package. The main branch remains unchanged until review and verification are complete.
+> This version brings the tested local station-logo library into the official card package. The main branch includes the local track-artwork bridge for ESPHome displays.
 
 ---
 
@@ -31,6 +31,7 @@ A compact, modern Home Assistant Lovelace card for AtlasCube radio devices.
 - Optional manual availability override
 - Optional album artwork, source and volume sections
 - Ordered station-logo search, local disk cache and manual selection
+- Local cache for the selected track cover, exposed to ESPHome through a Home Assistant sensor
 
 ### Requirements
 
