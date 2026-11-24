@@ -10,8 +10,6 @@ class AtlasCubeRadioCard extends HTMLElement {
     this._cache = new Map();
     this._stationLogoCache = new Map();
     this._requestId = 0;
-    this._artworkSyncPromise = Promise.resolve();
-    this._lastArtworkSyncSignature = null;
     this._stationLogoRequestId = 0;
     this._stationLogoDiagnostics = [];
     this._stationLogoDiagnosticsRequestId = 0;
@@ -60,9 +58,8 @@ class AtlasCubeRadioCard extends HTMLElement {
     const track = this._getTrack();
     if (track !== this._lastTrack) {
       this._lastTrack = track;
-      if (this._config.show_artwork !== false) this._loadArtwork();
+      this._data = this._trackDisplayData(track);
     }
-
     const station = this._getStation();
     if (station !== this._lastStation) {
       this._lastStation = station;
@@ -152,6 +149,7 @@ class AtlasCubeRadioCard extends HTMLElement {
       volume: read(r.volume),
       source: read(r.source),
       availability: read(r.availability),
+      artwork: read("sensor.atlascube_radio_cover_url"),
       show_artwork: this._config?.show_artwork,
       show_station_logo: this._config?.show_station_logo,
       show_source: this._config?.show_source,
@@ -658,7 +656,7 @@ class AtlasCubeRadioCard extends HTMLElement {
       this._stationLogoDiagnosticsReadyFor = station;
 
     } catch (error) {
-      console.warn("AtlasCube TEST: nie udało się zebrać wyników diagnostycznych logo.", error);
+      console.warn("AtlasCube: nie udało się zebrać wyników diagnostycznych logo.", error);
       this._stationLogoDiagnostics = [];
       this._stationLogoDiagnosticsReadyFor = station;
     }
@@ -938,117 +936,14 @@ class AtlasCubeRadioCard extends HTMLElement {
     }
   }
 
-  async _loadArtwork() {
-    const rawTrack = this._getTrack();
-    const { artist, title } = this._parseTrack(rawTrack);
-    const requestId = ++this._requestId;
-    this._syncArtworkToHomeAssistant(rawTrack, "");
-
-    if (!rawTrack || !title) {
-      this._applyResult({ rawTrack, artist, title, artwork: null, album: "" });
-      return;
-    }
-
-    const cacheKey = this._normalize(rawTrack);
-
-    if (this._cache.has(cacheKey)) {
-      this._applyResult({
-        rawTrack,
-        artist,
-        title,
-        ...this._cache.get(cacheKey)
-      });
-      return;
-    }
-
-    try {
-      const query = encodeURIComponent(`${artist} ${title}`);
-      const url =
-        `https://itunes.apple.com/search?term=${query}&country=PL&media=music&entity=song&limit=10`;
-
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (requestId !== this._requestId) return;
-
-      const results = Array.isArray(data.results) ? data.results : [];
-
-      let best = null;
-      let bestScore = -1;
-
-      for (const result of results) {
-        const score = this._scoreResult(result, artist, title);
-
-        if (score > bestScore) {
-          bestScore = score;
-          best = result;
-        }
-      }
-
-      const artwork = best?.artworkUrl100
-        ? best.artworkUrl100
-            .replace(/100x100bb\./i, "600x600bb.")
-            .replace(/^http:/i, "https:")
-        : null;
-
-      const result = {
-        artwork,
-        album: best?.collectionName || "",
-        matchScore: bestScore
-      };
-
-      this._cache.set(cacheKey, result);
-
-      this._applyResult({
-        rawTrack,
-        artist,
-        title,
-        ...result
-      });
-    } catch (error) {
-      if (requestId !== this._requestId) return;
-
-      this._applyResult({
-        rawTrack,
-        artist,
-        title,
-        artwork: null,
-        album: "",
-        error: error?.message || "Nieznany błąd"
-      });
-    }
-  }
-
-  _applyResult(data) {
-    this._status = "";
-    this._data = data;
-    this._syncArtworkToHomeAssistant(data?.rawTrack || "", data?.artwork || "");
-    this._render();
-  }
-
-  _syncArtworkToHomeAssistant(track, artwork) {
-    if (!this._hass?.callWS) return;
-    const safeTrack = String(track || "");
-    const safeArtwork = String(artwork || "");
-    const signature = `${safeTrack}\n${safeArtwork}`;
-    if (signature === this._lastArtworkSyncSignature) return;
-    this._lastArtworkSyncSignature = signature;
-
-    this._artworkSyncPromise = this._artworkSyncPromise
-      .catch(() => {})
-      .then(() => this._hass.callWS({
-        type: "atlascube_local_logos/artwork_set",
-        track: safeTrack,
-        url: safeArtwork
-      }))
-      .catch(error => {
-        console.warn("AtlasCube Local Logos: nie udało się przekazać okładki do Home Assistanta.", error);
-      });
+  _trackDisplayData(track) {
+    const { artist, title } = this._parseTrack(track);
+    const coverEntity = this._hass?.states?.["sensor.atlascube_radio_cover_url"];
+    const coverUrl = coverEntity?.attributes?.artwork_large || "";
+    const artwork = coverUrl && coverUrl !== "none" && coverUrl !== "unknown" && coverUrl !== "unavailable"
+      ? coverUrl
+      : "";
+    return { rawTrack: track, artist, title, artwork, album: "" };
   }
 
   _setStatus(status) {
@@ -1089,7 +984,8 @@ class AtlasCubeRadioCard extends HTMLElement {
   _render() {
     if (!this.shadowRoot) return;
 
-    const data = this._data || {};
+    const track = this._getTrack();
+    const data = this._trackDisplayData(track);
     const artwork = data.artwork || "";
     const r = this._config?.radio || {};
     const online = this._online();
@@ -1257,13 +1153,13 @@ class AtlasCubeRadioCard extends HTMLElement {
         .offline-title { font-size:17px; font-weight:700; }
         .offline-text { font-size:13px; opacity:.65; margin-top:4px; }
 
-        .topbar { width:100%; min-height:90px; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:6px; box-sizing:border-box; padding-top:2px; }
-        .brand { display:flex; align-items:center; justify-content:flex-start; gap:7px; margin:0; font-size:16px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; opacity:.94; flex:0 1 auto; min-width:0; }
+        .topbar { position:relative; width:100%; min-height:90px; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:6px; box-sizing:border-box; padding-top:2px; }
+        .brand { position:absolute; top:2px; left:0; z-index:4; display:flex; flex-flow:row nowrap; align-items:center; justify-content:flex-start; gap:7px; margin:0; width:max-content; max-width:none; white-space:nowrap; font-size:16px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; opacity:.94; flex:0 0 auto; min-width:max-content; }
         .brand-icon { font-size:22px; line-height:1; }
-        .brand-cube { opacity:.58; }
+.brand-cube { opacity:.58; }
         .brand.web { cursor:pointer; }
         .brand.web:active { transform:scale(.995); }
-        .station-logo-slot { position:relative; flex:0 0 58%; width:58%; max-width:58%; min-width:0; min-height:90px; height:90px; padding:6px 3px 17px; box-sizing:border-box; display:flex; align-items:center; justify-content:flex-end; overflow:visible; }
+        .station-logo-slot { position:absolute; top:0; right:0; z-index:2; flex:0 0 58%; width:58%; max-width:58%; min-width:0; min-height:90px; height:90px; padding:6px 3px 17px; box-sizing:border-box; display:flex; align-items:center; justify-content:flex-end; overflow:visible; }
         .station-logo { position:relative; z-index:1; display:block; flex:0 1 100%; width:100%; min-width:0; max-width:100%; height:60px; max-height:60px; object-fit:contain; object-position:right center; overflow:visible; filter:drop-shadow(0 0 4px rgba(250,252,255,.98)) drop-shadow(0 0 11px rgba(210,226,250,.82)) drop-shadow(0 0 18px rgba(190,210,240,.36)) drop-shadow(0 2px 5px rgba(0,0,0,.28)); }
         .station-logo-origin { position:absolute; right:0; bottom:0; z-index:2; padding:2px 4px; border:1px solid rgba(255,255,255,.18); border-radius:5px; background:rgba(8,14,24,.82); color:#eaf3ff; font-size:8px; line-height:1.15; font-weight:800; letter-spacing:.035em; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,.24); pointer-events:none; }
         .station-logo-origin.disk { border-color:rgba(76,175,80,.65); color:#a5f0a9; }
@@ -1950,7 +1846,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
 
       <div class="box">
         <div class="badge">AtlasCube Radio Card · v0.5.9</div>
-        <h2>AtlasCube Radio Card v0.5.9</h2>
+        <h2>AtlasCube Radio Card 0.5.9</h2>
         <p>Karta wykrywa AtlasCube i korzysta z natywnej dostępności MQTT przez stany jego encji.</p>
 
         <button class="auto" id="auto">🔎 Automatycznie wykryj AtlasCube</button>
@@ -1975,7 +1871,7 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
           </label>
           <label>
             <input type="checkbox" id="show_station_logo" ${this._config.show_station_logo !== false ? "checked" : ""}>
-            <span>Logo stacji (TEST)</span>
+            <span>Logo stacji</span>
           </label>
           <label>
             <input type="checkbox" id="show_source" ${this._config.show_source !== false ? "checked" : ""}>
@@ -2037,16 +1933,19 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
   }
 }
 
-customElements.define("atlascube-radio-card-editor", AtlasCubeRadioCardEditor);
-
-
-customElements.define("atlascube-radio-card", AtlasCubeRadioCard);
-
+if (!customElements.get("atlascube-radio-card-editor")) {
+  customElements.define("atlascube-radio-card-editor", AtlasCubeRadioCardEditor);
+}
+if (!customElements.get("atlascube-radio-card")) {
+  customElements.define("atlascube-radio-card", AtlasCubeRadioCard);
+}
 window.customCards = window.customCards || [];
-window.customCards.push({
-  type: "atlascube-radio-card",
-  name: "AtlasCube Radio Card v0.5.9",
-  description: "AtlasCube Radio Card z lokalną biblioteką logo",
-  preview: true,
-  documentationURL: "https://github.com/MarLip1981/atlascube-radio-card"
-});
+if (!window.customCards.some(card => card.type === "atlascube-radio-card")) {
+  window.customCards.push({
+    type: "atlascube-radio-card",
+    name: "AtlasCube Radio Card 0.5.9",
+    description: "Karta AtlasCube z lokalną obsługą logo stacji i okładek",
+    preview: true,
+    documentationURL: "https://github.com/MarLip1981/atlascube-radio-card"
+  });
+}
