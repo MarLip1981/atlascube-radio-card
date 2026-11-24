@@ -4,9 +4,9 @@
 
 A compact, modern Home Assistant Lovelace card for AtlasCube radio devices.
 
-> **Version 0.5.1 — local track-artwork bridge**
+> **Version 0.5.9 — local station logos and ESPHome cover bridge**
 >
-> This version brings the tested local station-logo library into the official card package. The main branch includes the local track-artwork bridge for ESPHome displays.
+> This release combines the tested local station-logo workflow with the local track-artwork bridge for ESPHome displays. The standalone card and the bundled integration copy are kept in sync.
 
 ---
 
@@ -44,16 +44,25 @@ The card discovers the AtlasCube device from the Home Assistant device/entity re
 
 ### Installation with HACS
 
-Install this repository through HACS as a **custom repository of type Integration**:
+The Lovelace card is published in the default HACS catalog as a **Dashboard** repository:
 
-1. Open HACS → three-dot menu → **Custom repositories**.
-2. Add `MarLip1981/atlascube-radio-card` and select **Integration**.
-3. Install **AtlasCube Radio Card**.
-4. Restart Home Assistant.
-5. Open Settings → Devices & services → **Add integration** and add **AtlasCube Local Logos**.
-6. Refresh the Home Assistant frontend. The integration serves the bundled card JavaScript and registers it automatically; do not add a manual Lovelace resource.
+1. Open HACS → **Dashboard**.
+2. Search for **AtlasCube Radio Card**.
+3. Open the repository and select **Download**.
+4. Refresh the Home Assistant frontend.
 
-This is the same installation model used by the tested local-logo package. The integration and the bundled JavaScript must be kept in sync; the repository includes both copies. If the old test integration is installed, remove it before installing this official package to avoid duplicate websocket handlers and frontend resources.
+Do not add this repository as a custom HACS **Integration**. HACS already lists this repository in the Dashboard category, and the same repository cannot be registered a second time under Integration.
+
+### Companion integration — AtlasCube Local Logos
+
+The `custom_components/atlascube_local_logos` folder contains the companion Home Assistant integration. It provides local station-logo search and the `sensor.atlascube_radio_cover_url` sensor used by ESPHome displays. It is separate from the HACS Dashboard card package:
+
+1. Copy `custom_components/atlascube_local_logos` into your Home Assistant `config/custom_components/` directory.
+2. Restart Home Assistant.
+3. Open Settings → Devices & services → **Add integration** and add **AtlasCube Local Logos**.
+4. Refresh the frontend.
+
+The integration serves its bundled card JavaScript and registers the Lovelace resource automatically. Keep the integration and the standalone `atlascube-radio-card.js` file from the same release. If you already have the companion integration installed from a test build, update that folder to the matching release instead of installing a second copy.
 
 ### Automatic configuration
 
@@ -175,16 +184,25 @@ Karta wykrywa urządzenie na podstawie rejestru urządzeń i encji Home Assistan
 
 ### Instalacja przez HACS
 
-Zainstaluj repozytorium przez HACS jako **niestandardowe repozytorium typu Integration**:
+Karta Lovelace jest opublikowana w domyślnym katalogu HACS jako repozytorium typu **Dashboard**:
 
-1. Otwórz HACS → menu trzech kropek → **Niestandardowe repozytoria**.
-2. Dodaj `MarLip1981/atlascube-radio-card` i wybierz typ **Integration**.
-3. Zainstaluj **AtlasCube Radio Card**.
-4. Uruchom ponownie Home Assistant.
-5. Otwórz Ustawienia → Urządzenia i usługi → **Dodaj integrację** i dodaj **AtlasCube Local Logos**.
-6. Odśwież frontend Home Assistant. Integracja sama udostępnia dołączony plik JavaScript karty i automatycznie rejestruje zasób Lovelace — nie dodawaj go ręcznie.
+1. Otwórz HACS → **Dashboard**.
+2. Wyszukaj **AtlasCube Radio Card**.
+3. Otwórz repozytorium i wybierz **Pobierz**.
+4. Odśwież frontend Home Assistant.
 
-To ten sam sposób instalacji, który działał w testowym pakiecie z lokalnymi logo. Integracja i dołączony plik JavaScript muszą być aktualizowane razem; w repozytorium znajdują się obie kopie. Jeśli masz zainstalowaną wcześniejszą integrację testową, usuń ją przed instalacją oficjalnego pakietu, aby uniknąć zdublowanych obsług websocket i zasobów frontendowych.
+Nie dodawaj tego repozytorium jako niestandardowej integracji HACS (**Integration**). Repozytorium jest już obecne w katalogu HACS w kategorii Dashboard i HACS nie pozwala zarejestrować tego samego repozytorium drugi raz jako Integration.
+
+### Integracja uzupełniająca — AtlasCube Local Logos
+
+Folder `custom_components/atlascube_local_logos` zawiera dodatkową integrację Home Assistant. Zapewnia lokalne wyszukiwanie logo stacji oraz sensor `sensor.atlascube_radio_cover_url` wykorzystywany przez wyświetlacze ESPHome. Jest instalowana osobno od karty HACS:
+
+1. Skopiuj folder `custom_components/atlascube_local_logos` do katalogu `config/custom_components/` w Home Assistant.
+2. Uruchom ponownie Home Assistant.
+3. Otwórz Ustawienia → Urządzenia i usługi → **Dodaj integrację** i dodaj **AtlasCube Local Logos**.
+4. Odśwież frontend.
+
+Integracja udostępnia dołączony plik JavaScript karty i automatycznie rejestruje zasób Lovelace. Integracja i samodzielny plik `atlascube-radio-card.js` muszą pochodzić z tego samego wydania. Jeśli masz już zainstalowaną integrację z wersji testowej, zaktualizuj jej folder do zgodnej wersji zamiast instalować drugą kopię.
 
 ### Automatyczna konfiguracja
 
@@ -264,7 +282,7 @@ Po wyłączeniu okładek karta wraca do kompaktowego widoku radia z tęczową an
 
 ### Instalacja ręczna
 
-Ta metoda dotyczy wyłącznie starszej instalacji karty jako repozytorium Dashboard. W instalacji v0.5.0 przez integrację **AtlasCube Local Logos** nie dodawaj pliku JavaScript ręcznie — integracja rejestruje zasób automatycznie. Przed migracją usuń stary zasób Lovelace wskazujący na `atlascube-radio-card.js`, aby nie ładować dwóch kopii karty.
+Ta metoda dotyczy wyłącznie starszej instalacji karty jako repozytorium Dashboard. W instalacji przez integrację **AtlasCube Local Logos** nie dodawaj pliku JavaScript ręcznie — integracja rejestruje zasób automatycznie. Przed migracją usuń stary zasób Lovelace wskazujący na `atlascube-radio-card.js`, aby nie ładować dwóch kopii karty.
 
 ---
 
@@ -284,39 +302,28 @@ Ta metoda dotyczy wyłącznie starszej instalacji karty jako repozytorium Dashbo
 
 ![AtlasCube Radio Card configuration and preview](./Screenshot_20261003_183337_Home%20Assistant.jpg)
 
-## Development status
+## Release 0.5.9
 
-**v0.5.0 release candidate**
+Version 0.5.9 is the stable release from the `main` branch. It retains the established radio controls and includes the tested local station-logo workflow and the local track-artwork bridge for ESPHome displays.
 
-This candidate retains the established radio controls and adds the station-logo workflow. It is not a published release until the integration installation path, automated checks, and Home Assistant behavior have been verified.
-
-- AtlasCube auto-discovery
-- optional album artwork
-- native MQTT-derived availability
-- automatic web interface discovery
-- online/offline card behavior
-- local station-logo cache and selection
-- ordered automatic logo search with fallback
+- Automatic AtlasCube device and entity discovery
+- Album artwork with local cache
+- Local station-logo search, selection and fallback handling
+- Native MQTT-derived online/offline state
+- Automatic AtlasCube web-interface discovery
+- `sensor.atlascube_radio_cover_url` for ESPHome cover display
+- Standalone card JavaScript and integration-bundled JavaScript kept in sync
 
 Brightness, LED ring, SD card and URL playback controls remain intentionally outside the default card.
 
-## HACS publication checklist
+## HACS publication
 
-- [x] Public GitHub repository
-- [x] `hacs.json`
-- [x] Dashboard/plugin repository structure
-- [x] License
-- [x] README documentation
-- [x] HACS validation workflow
-- [x] Real screenshots in README
-- [ ] GitHub repository description
-- [ ] GitHub repository topics
-- [ ] Verify GitHub Issues are enabled
-- [ ] Create the first GitHub Release
-- [ ] Run and pass HACS validation
-- [x] Submit repository to the HACS default `plugin` list (PR #11557 accepted)
+- The Lovelace card is listed in the HACS default catalog as a **Dashboard** repository (accepted in PR #11557).
+- The companion `AtlasCube Local Logos` integration is included in this repository under `custom_components/atlascube_local_logos` and is installed separately.
+- The repository must not be added to HACS a second time as an Integration repository.
+- The `main` branch and GitHub release tag `V0.5.9` are the stable release; the `test-radio-cover` branch remains for ongoing test work.
 
-The repository has already been accepted into the default HACS repository list (PR #11557). Before publishing v0.5.0, validate the final branch and resolve the companion-integration installation limitation described above. The banner is embedded in this README; the SVG icon is a repository asset and is not claimed to be a native HACS icon field.
+The banner is embedded in this README. The SVG icon is a repository asset and is not claimed to be a native HACS icon field.
 
 ## License
 
