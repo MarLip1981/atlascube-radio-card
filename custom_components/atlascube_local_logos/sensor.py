@@ -1,4 +1,4 @@
-"""Current track artwork exposed to ESPHome."""
+"""Current track artwork URL and internal high-resolution URL for the AtlasCube card."""
 from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity
@@ -14,14 +14,14 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the current artwork URL sensor."""
-    entity = AtlasCubeArtworkSensor(hass)
-    hass.data.setdefault(DOMAIN, {})["artwork_sensor"] = entity
-    async_add_entities([entity])
+    sensor = AtlasCubeArtworkSensor(hass)
+    state = hass.data.setdefault(DOMAIN, {})
+    state["artwork_sensor"] = sensor
+    async_add_entities([sensor])
 
 
 class AtlasCubeArtworkSensor(SensorEntity):
-    """Expose the local URL of the artwork currently selected by the card."""
+    """Expose the lightweight URL as state and the dashboard URL as an attribute."""
 
     _attr_has_entity_name = False
     _attr_name = "AtlasCube Radio Cover URL"
@@ -35,5 +35,13 @@ class AtlasCubeArtworkSensor(SensorEntity):
 
     @property
     def native_value(self) -> str:
-        """Return a relative local URL, or 'none' when no cover is available."""
         return self.hass.data.get(DOMAIN, {}).get("current_artwork", "none")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        """Keep the large dashboard URL internal to this single HA entity."""
+        return {
+            "artwork_large": self.hass.data.get(DOMAIN, {}).get(
+                "current_artwork_large", "none"
+            )
+        }
