@@ -1477,7 +1477,7 @@ class AtlasCubeRadioCard extends HTMLElement {
           </div>` : ""}
 
           ${online && this._config.show_source !== false && sourceOptions.length ? `<div class="source"><ha-icon icon="mdi:radio-tower"></ha-icon><select id="source" aria-label="Źródło">${sourceOptions.map(option => `<option value="${this._escape(option)}" ${option === sourceValue ? "selected" : ""}>${this._escape(option)}</option>`).join("")}</select></div>` : ""}
-          <div class="version-footer">v0.5.0</div>
+          <div class="version-footer">v0.5.9</div>
         </div>
       </div>
     `;
@@ -1949,8 +1949,8 @@ class AtlasCubeRadioCardEditor extends HTMLElement {
       </style>
 
       <div class="box">
-        <div class="badge">AtlasCube Radio Card · v0.5.0</div>
-        <h2>AtlasCube Radio Card v0.5.0</h2>
+        <div class="badge">AtlasCube Radio Card · v0.5.9</div>
+        <h2>AtlasCube Radio Card v0.5.9</h2>
         <p>Karta wykrywa AtlasCube i korzysta z natywnej dostępności MQTT przez stany jego encji.</p>
 
         <button class="auto" id="auto">🔎 Automatycznie wykryj AtlasCube</button>
@@ -2045,7 +2045,7 @@ customElements.define("atlascube-radio-card", AtlasCubeRadioCard);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "atlascube-radio-card",
-  name: "AtlasCube Radio Card v0.5.0",
+  name: "AtlasCube Radio Card v0.5.9",
   description: "AtlasCube Radio Card z lokalną biblioteką logo",
   preview: true,
   documentationURL: "https://github.com/MarLip1981/atlascube-radio-card"
