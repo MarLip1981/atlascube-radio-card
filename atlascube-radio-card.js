@@ -60,14 +60,24 @@ class AtlasCubeRadioCard extends HTMLElement {
     const track = this._getTrack();
     if (track !== this._lastTrack) {
       this._lastTrack = track;
-      if (this._config.show_artwork !== false) this._loadArtwork();
+      if (this._config.show_artwork !== false) {
+        this._loadArtwork();
+      } else {
+        this._syncArtworkToHomeAssistant(track, "");
+      }
     }
 
     const station = this._getStation();
     if (station !== this._lastStation) {
       this._lastStation = station;
+      // Logo jest pobierane również wtedy, gdy jego podgląd na karcie jest ukryty:
+      // może być potrzebne jako grafika zastępcza dla Jarvisa.
+      this._loadStationLogo().finally(() => {
+        if (this._getStation() === station) {
+          this._syncCurrentArtworkToHomeAssistant();
+        }
+      });
       if (this._config.show_station_logo !== false) {
-        this._loadStationLogo();
         this._loadStationLogoDiagnostics(station);
       }
     }
@@ -1031,11 +1041,18 @@ class AtlasCubeRadioCard extends HTMLElement {
     this._render();
   }
 
+  _syncCurrentArtworkToHomeAssistant() {
+    const track = this._getTrack();
+    const artwork = this._data?.rawTrack === track ? (this._data?.artwork || "") : "";
+    this._syncArtworkToHomeAssistant(track, artwork);
+  }
+
   _syncArtworkToHomeAssistant(track, artwork) {
     if (!this._hass?.callWS) return;
     const safeTrack = String(track || "");
     const safeArtwork = String(artwork || "");
-    const signature = `${safeTrack}\n${safeArtwork}`;
+    const stationKey = this._stationLogoKey(this._getStation());
+    const signature = `${safeTrack}\n${safeArtwork}\n${stationKey}`;
     if (signature === this._lastArtworkSyncSignature) return;
     this._lastArtworkSyncSignature = signature;
 
@@ -1044,10 +1061,11 @@ class AtlasCubeRadioCard extends HTMLElement {
       .then(() => this._hass.callWS({
         type: "atlascube_local_logos/artwork_set",
         track: safeTrack,
-        url: safeArtwork
+        url: safeArtwork,
+        station_key: stationKey
       }))
       .catch(error => {
-        console.warn("AtlasCube Local Logos: nie udało się przekazać okładki do Home Assistanta.", error);
+        console.warn("AtlasCube Local Logos: nie udało się przekazać grafiki do Home Assistanta.", error);
       });
   }
 
@@ -1514,6 +1532,7 @@ class AtlasCubeRadioCard extends HTMLElement {
         this._stationLogoCache.set(this._stationLogoKey(station), refreshed);
         button.textContent = "Logo odświeżone ✓";
         this._render();
+        this._syncCurrentArtworkToHomeAssistant();
       } catch (error) {
         console.warn("AtlasCube Local Logos: odświeżenie logo nie powiodło się.", error);
         button.textContent = "Wybierz logo ponownie, aby zapisać źródło";
@@ -1536,7 +1555,11 @@ class AtlasCubeRadioCard extends HTMLElement {
       this._stationLogoRequestId += 1;
       this._logoPickerOpen = false;
       this._stationLogo = null;
-      this._loadStationLogo();
+      this._loadStationLogo().finally(() => {
+        if (this._getStation() === station) {
+          this._syncCurrentArtworkToHomeAssistant();
+        }
+      });
     });
 
     this.shadowRoot.querySelectorAll(".logo-diagnostic-item").forEach(item => {
@@ -1595,6 +1618,7 @@ class AtlasCubeRadioCard extends HTMLElement {
               this._stationLogo = persisted;
               this._stationLogoCache.set(this._stationLogoKey(selected.station), persisted);
               this._render();
+              this._syncCurrentArtworkToHomeAssistant();
             }
           }).catch(error => console.warn("AtlasCube Local Logos: zapis ręcznego logo nie powiódł się.", error));
         }
