@@ -304,7 +304,7 @@ Ta metoda dotyczy wyłącznie starszej instalacji karty jako repozytorium Dashbo
 
 ## Release 0.5.9
 
-Version 0.5.9 is the stable release from the `main` branch. It retains the established radio controls and includes the tested local station-logo workflow and the local track-artwork bridge for ESPHome displays.
+Version 0.5.9 is prepared on the `main` branch and awaits publication as a GitHub Release after the automated checks pass. It retains the established radio controls and includes the tested local station-logo workflow and the local track-artwork bridge for ESPHome displays.
 
 - Automatic AtlasCube device and entity discovery
 - Album artwork with local cache
@@ -321,7 +321,8 @@ Brightness, LED ring, SD card and URL playback controls remain intentionally out
 - The Lovelace card is listed in the HACS default catalog as a **Dashboard** repository (accepted in PR #11557).
 - The companion `AtlasCube Local Logos` integration is included in this repository under `custom_components/atlascube_local_logos` and is installed separately.
 - The repository must not be added to HACS a second time as an Integration repository.
-- The `main` branch and GitHub release tag `V0.5.9` are the stable release; the `test-radio-cover` branch remains for ongoing test work.
+- The `main` branch contains the prepared v0.5.9 release. Publish GitHub Release with tag `V0.5.9` from the validated `main` commit to make the update available through HACS.
+- The `test-radio-cover` branch remains separate for ongoing test work and is not part of v0.5.9.
 
 The banner is embedded in this README. The SVG icon is a repository asset and is not claimed to be a native HACS icon field.
 
