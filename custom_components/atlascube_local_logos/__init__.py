@@ -323,21 +323,45 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         vol.Required("type"): WS_ARTWORK_SET,
         vol.Required("track"): str,
         vol.Optional("url", default=""): str,
+        vol.Optional("station_key", default=""): str,
     })
     @websocket_api.async_response
     async def ws_artwork_set(hass, connection, msg):
-        """Cache the artwork already selected by the Lovelace card."""
+        """Expose track artwork, falling back to the current station logo."""
         try:
             track = str(msg.get("track", "")).strip()
             url = str(msg.get("url", "")).strip()
+            station_key = str(msg.get("station_key", "")).strip()
             state = hass.data[DOMAIN]
             cover_folder = state["cover_folder"]
+
+            # Bez okładki wybieramy lokalne logo bieżącej stacji.
+            # Klucz pochodzi z tego samego mechanizmu, który zapisuje bibliotekę logo.
             if not track or not url:
-                state["current_artwork"] = "none"
+                artwork_url = "none"
+                if station_key:
+                    key = _safe_key(station_key)
+                    logo_folder = state["folder"]
+                    logo_path = next(
+                        (
+                            logo_folder / f"{key}{ext}"
+                            for ext in _EXTENSIONS.values()
+                            if (logo_folder / f"{key}{ext}").is_file()
+                        ),
+                        None,
+                    )
+                    if logo_path:
+                        artwork_url = f"/local/{LOGO_DIR}/{logo_path.name}"
+
+                state["current_artwork"] = artwork_url
                 sensor = state.get("artwork_sensor")
                 if sensor:
                     sensor.async_write_ha_state()
-                connection.send_result(msg["id"], {"artwork": "none", "cleared": True})
+                connection.send_result(msg["id"], {
+                    "artwork": artwork_url,
+                    "source": "station_logo" if artwork_url != "none" else "none",
+                    "fallback": True,
+                })
                 return
 
             if len(track) > 500:
